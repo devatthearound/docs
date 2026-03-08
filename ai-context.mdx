@@ -1,0 +1,223 @@
+---
+title: "AI Context"
+description: "Quick reference for AI agents and code generation tools"
+---
+
+# Cronozen AI Context
+
+This page provides structured context for AI agents (Claude, Cursor, ChatGPT) to understand the Cronozen platform and generate accurate code.
+
+<Info>
+  For machine-readable versions, see [llms.txt](https://docs.cronozen.com/llms.txt) and [llms-full.txt](https://docs.cronozen.com/llms-full.txt).
+</Info>
+
+---
+
+## What is Cronozen?
+
+A **multi-tenant SaaS operating system** for 7 verticals: rehabilitation, welfare, education, pharmacy, commerce, mentoring, interior design. Hub-and-spoke architecture with SSO, DPU (cryptographic decision proof), and white-label support.
+
+---
+
+## Key Entities
+
+| Entity | Description | Key Identifier |
+|--------|-------------|----------------|
+| **Actor** | An authenticated identity (person) | `actorId` (UUID) |
+| **Center** | An isolated organization (tenant) | `centerId` (Integer) |
+| **Membership** | Actor-to-center access grant | `role` + `status` |
+| **Workspace** | Personal actor context | `isPersonalWorkspaceDomain()` |
+| **DPU** | Tamper-evident decision record | `chainHash` (SHA-256) |
+| **Tenant** | LMS service tenant | `tenantId` (UUID) |
+
+### Actor Roles
+
+```
+ADMIN        — Center administrator (full access)
+INSTRUCTOR   — Service provider (isolated from center data)
+PARENT       — Guardian (cross-center view of children)
+CHILD        — Service recipient
+```
+
+### Membership Lifecycle
+
+```
+INVITED → PENDING → ACTIVE → ENDED
+                      ↓
+                  SUSPENDED
+```
+
+---
+
+## Tech Stack
+
+```yaml
+Framework:    Next.js 16 + TypeScript
+ORM:          Prisma 6.18 (scoped models for tenant isolation)
+Database:     PostgreSQL + pgvector
+Cache:        Redis
+Auth:         JWT (SSO via auth.cronozen.com)
+Infrastructure: AWS ECS Fargate (ap-northeast-2)
+Edge:         CloudFlare (DNS, Workers, WAF)
+CI/CD:        GitHub Actions (develop→staging, main→production)
+Payment:      Toss Payments (Korea)
+Video:        Vimeo (LMS)
+```
+
+---
+
+## Hub-and-Spoke Services
+
+```
+OPS (cronozen.com)           — Hub: SSO, billing, DPU, tenant master
+LMS (learn.cronozen.com)     — Learning, HRD-Net compliance, EMON
+CMS (blog.cronozen.com)      — Blog, manuals, content
+ERP (erp.cronozen.com)       — Odoo business management
+Docs (docs.cronozen.com)     — Developer documentation (Mintlify)
+```
+
+---
+
+## Common Patterns
+
+### Authentication Flow
+
+```bash
+# 1. Login
+POST /api/auth/login
+{ "email": "admin@center.com", "password": "..." }
+→ { "accessToken": "jwt...", "refreshToken": "..." }
+
+# 2. Use token
+GET /api/auth/me
+Authorization: Bearer jwt...
+
+# 3. Switch center
+POST /api/auth/switch-center
+{ "centerId": 2 }
+
+# 4. Cross-app SSO
+POST /api/auth/sso/token
+{ "targetApp": "lms" }
+→ { "token": "sso-token-..." }
+```
+
+### Multi-Tenant Data Access
+
+```typescript
+// CORRECT: Scoped Prisma (auto-filters by center_id)
+const sessions = await scopedPrisma.session.findMany();
+
+// CORRECT: Explicit scope check
+const scope = await requireCenterScope(actorId);
+const data = await basePrisma.schedule.findMany({
+  where: { center_id: scope.centerId }
+});
+
+// WRONG: Never query without center scope
+const data = await basePrisma.schedule.findMany(); // ❌ Returns ALL centers
+```
+
+### DPU Hash Chain
+
+```typescript
+import { computeChainHash } from '@cronozen/dpu-core';
+
+const hash = computeChainHash(
+  content,        // decision content
+  previousHash,   // previous DPU hash (null for genesis)
+  timestamp        // ISO 8601
+);
+// → SHA-256 hex string
+```
+
+### White-Label Domain Resolution
+
+```typescript
+// CloudFlare Worker proxies: brand.co.kr → cronozen.com/brand-slug
+// Middleware resolves: hostname → center_domain → centerId
+
+// Config files to update for new white-label:
+// 1. config/domains.config.ts          — domain → center mapping
+// 2. src/lib/proxy/constants.ts        — rewrite segments, auth client
+// 3. config/auth-clients.config.ts     — redirect URI
+```
+
+---
+
+## API Quick Reference
+
+### Core Endpoints
+
+| Action | Method | Path |
+|--------|--------|------|
+| Login | POST | `/api/auth/login` |
+| Current user | GET | `/api/auth/me` |
+| Switch center | POST | `/api/auth/switch-center` |
+| SSO token | POST | `/api/auth/sso/token` |
+| Get center | GET | `/api/centers/{domain}` |
+| Search centers | POST | `/api/centers/search` |
+| Create DPU | POST | `/api/dpu/demo` |
+| Get DPU | GET | `/api/dpu/{id}` |
+| Export DPU | GET | `/api/dpu/{id}/export` |
+| Verify chain | GET | `/api/dpu/{id}/verify` |
+
+### Partner Endpoints
+
+| Action | Method | Path |
+|--------|--------|------|
+| List centers | GET | `/api/partner/centers` |
+| Create center | POST | `/api/partner/centers` |
+| Dashboard stats | GET | `/api/partner/stats/dashboard` |
+| Audit log | GET | `/api/partner/audit` |
+| Members | GET | `/api/partner/members` |
+| Settings | GET/PATCH | `/api/partner/settings` |
+
+### Provisioning
+
+| Action | Method | Path |
+|--------|--------|------|
+| Create center | POST | `/api/provisioning/center-tenant` |
+| Check subdomain | POST | `/api/provisioning/check-subdomain` |
+| Center plans | GET | `/api/provisioning/center-plans` |
+| LMS plans | GET | `/api/provisioning/lms-plans` |
+
+---
+
+## OpenAPI Spec
+
+Full API specification available at:
+- [openapi.yaml](https://docs.cronozen.com/openapi.yaml)
+
+Use with AI tools:
+
+```bash
+# Claude / Cursor
+"Read the OpenAPI spec at docs.cronozen.com/openapi.yaml and generate a TypeScript client"
+
+# ChatGPT
+"Based on the Cronozen API spec, create integration code for..."
+```
+
+---
+
+## Repository Structure
+
+```
+thearound-ops/          — OPS Hub (cronozen.com)
+├── src/app/api/        — 134+ API routes
+├── src/lib/auth/       — Auth system (resolvers, JWT, SSO)
+├── src/lib/proxy/      — Domain routing, white-label
+├── src/core/           — Tenant OS (audit, membership, RBAC)
+├── config/             — Domain registry, auth clients
+└── prisma/             — 200+ table schema
+
+thearound-lms/          — LMS Spoke (learn.cronozen.com)
+├── src/lib/learning/   — HRD compliance, heartbeat, assessment
+├── src/lib/emon/       — EMON electronic monitoring
+├── src/lib/attendance/ — DPU proof, fraud detection, QR
+└── prisma/             — 77 models
+
+thearound-cms/          — CMS Spoke (blog.cronozen.com)
+thearound-docs/         — Docs (docs.cronozen.com, Mintlify)
+```

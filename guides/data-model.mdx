@@ -1,0 +1,282 @@
+---
+title: "Data Model"
+description: "Core entities and relationships in the Cronozen platform"
+---
+
+# Data Model
+
+Cronozen manages 200+ tables across its hub-and-spoke ecosystem. This page documents the core entities that define the platform's multi-tenant architecture.
+
+## Entity Relationship
+
+```
+                    ┌──────────────────┐
+                    │  unified_actors  │
+                    │  (identity)      │
+                    └────────┬─────────┘
+                             │ 1:N
+                    ┌────────▼─────────┐
+                    │ center_memberships│
+                    │ (access control)  │
+                    └────────┬─────────┘
+                             │ N:1
+              ┌──────────────▼──────────────┐
+              │           centers            │
+              │  (tenant / organization)     │
+              └──────┬──────────────┬───────┘
+                     │              │
+          ┌──────────▼───┐  ┌──────▼────────┐
+          │   schedules  │  │  dpu_records   │
+          │   sessions   │  │  (audit trail) │
+          │   invoices   │  └───────────────┘
+          └──────────────┘
+```
+
+---
+
+## Core Entities
+
+### unified_actors
+
+The identity layer. Every person in the system is a `unified_actor`.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| id | UUID | Primary key |
+| email | String | Login email (unique within center context) |
+| phone | String? | Phone number |
+| name | String | Display name |
+| password_hash | String | bcrypt hash |
+| is_verified | Boolean | Email/phone verified |
+| created_at | DateTime | Account creation |
+
+<Info>
+  One person can have multiple actors (e.g., parent at Center A and instructor at Center B). These are linked via **actor family** — `findActorFamilyIds()` groups actors by shared email or phone.
+</Info>
+
+---
+
+### centers
+
+The tenant entity. Each center is an isolated organization.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| id | Integer | Primary key |
+| name | String | Center name |
+| center_domain | String | URL slug (unique) |
+| path_slug | String | Internal routing path |
+| tenant_type | Enum | CENTER, WORKSPACE, PROGRAM, WHITE_LABEL |
+| vertical | String | rehabilitation, welfare, education, etc. |
+| status | Enum | ACTIVE, SUSPENDED, INACTIVE |
+| partner_id | UUID? | FK to whitelabel_agreements (if white-label) |
+| settings | JSON | Center-specific configuration |
+
+**Tenant types:**
+
+| Type | Purpose | Example |
+|------|---------|---------|
+| CENTER | Physical facility | Rehabilitation center, welfare center |
+| WORKSPACE | Personal actor space | Instructor freelancer workspace |
+| PROGRAM | Specific program instance | Summer therapy program |
+| WHITE_LABEL | Partner-branded instance | slowpace.co.kr |
+
+---
+
+### center_memberships
+
+The access control layer. Actors access centers through memberships.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| id | UUID | Primary key |
+| actor_id | UUID | FK to unified_actors |
+| center_id | Integer | FK to centers |
+| role | Enum | ADMIN, INSTRUCTOR, PARENT, CHILD |
+| status | Enum | INVITED, PENDING, ACTIVE, SUSPENDED, REJECTED, ENDED |
+| invited_at | DateTime? | When invitation was sent |
+| ended_at | DateTime? | When membership ended |
+| status_reason | String? | Reason for status change |
+
+**Lifecycle:**
+
+```
+INVITED ──▶ PENDING ──▶ ACTIVE ──▶ ENDED
+                │          │
+                ▼          ▼
+            REJECTED   SUSPENDED
+```
+
+**Security guarantees:**
+- No center access without active membership
+- No center_id fallback — always explicit membership check
+- All transitions are audited
+
+<Warning>
+  Never query center data by center_id directly. Always verify membership status first via `requireCenterScope()` or `getCenterScopeOrError()`.
+</Warning>
+
+---
+
+### center_tenant_mapping
+
+Cross-service linking between OPS hub and spoke services.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| id | Integer | Primary key |
+| center_id | Integer | FK to centers (unique) |
+| center_domain | String | Domain slug |
+| center_name | String | Display name |
+| cms_tenant_id | UUID? | FK to CMS tenant |
+| lms_tenant_id | UUID? | FK to LMS tenant |
+| cms_enabled | Boolean | CMS service active |
+| lms_enabled | Boolean | LMS service active |
+| provisioning_status | Enum | COMPLETED, FAILED, PROVISIONING |
+| provisioning_ref | String | Idempotency key (order ID) |
+
+---
+
+### whitelabel_agreements
+
+Partner/white-label contract and branding configuration.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| id | UUID | Primary key |
+| partner_domain | String | Unique brand slug |
+| partner_name | String | Partner organization name |
+| contract_status | Enum | ACTIVE, INACTIVE |
+| business_model | Enum | PUBLIC, PRIVATE |
+| revenue_share_rate | Decimal | Revenue share percentage (0-100) |
+| branding_logo | String? | Logo URL |
+| branding_primary_color | String? | Brand color hex |
+| branding_favicon | String? | Favicon URL |
+| landing_hero_title | String? | Landing page headline |
+| seo_title | String? | SEO page title |
+| seo_description | String? | SEO meta description |
+| features | JSON | Enabled features (survey, voucher, matching, etc.) |
+| enabled_domains | String[] | Active verticals (rehab, edu, etc.) |
+| public_signup_enabled | Boolean | Allow public registration |
+
+---
+
+### partner_memberships
+
+Partner organization access control.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| id | UUID | Primary key |
+| actor_id | UUID | FK to unified_actors |
+| partner_id | UUID | FK to whitelabel_agreements |
+| role | Enum | PARTNER_ADMIN, PARTNER_OPERATOR |
+| status | Enum | ACTIVE, INVITED, PENDING, SUSPENDED |
+
+<Info>
+  Partner Admin ≠ Tenant Admin. Partner admins manage centers (create, configure, monitor). Tenant admins manage data within a specific center.
+</Info>
+
+---
+
+## DPU Entities
+
+### dpu_records
+
+Decision Proof Unit — tamper-evident audit trail.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| id | UUID | Primary key |
+| content | Text | Decision content |
+| evidence_level | Enum | DRAFT(0), DOCUMENTED(1), AUDIT_READY(2) |
+| chain_hash | String | SHA-256 hash |
+| chain_index | Integer | Position in hash chain |
+| previous_hash | String? | Hash of previous record (null for genesis) |
+| reference_type | String | Source context (workflow, lms-attendance, etc.) |
+| reference_id | String | Source record ID |
+| created_by | UUID | Actor who created the decision |
+| center_id | Integer | Tenant scope |
+| tags | String[] | Classification tags |
+| metadata | JSON | Additional context |
+| created_at | DateTime | Creation timestamp |
+
+**Hash computation:**
+```
+chainHash = SHA-256(content | previousHash | timestamp)
+```
+
+**Evidence level transitions:**
+```
+DRAFT ──▶ DOCUMENTED ──▶ AUDIT_READY (LOCKED)
+```
+
+Once AUDIT_READY, the record is sealed. Any modification breaks the chain.
+
+---
+
+## LMS Entities (learn.cronozen.com)
+
+### Key Models
+
+| Model | Description | Key Fields |
+|-------|-------------|------------|
+| Tenant | LMS tenant (training institution) | subdomain, centerId, features, settings |
+| Product | Course, workshop, webinar | productType, title, price, hrdEnabled |
+| Chapter | Course structure unit | productId, title, order |
+| Content | Lesson (차시) | chapterId, title, duration, videoUrl |
+| Registration | Enrollment | actorId, productId, expiresAt, status |
+| Progress | Learning progress per content | registrationId, contentId, progressPercent |
+| Assessment | Exam/assignment | hrdType, hrdWeight, timeLimitMinutes |
+| AttendanceSession | Workshop event instance | date, location, capacity, qrTokenTTL |
+| AttendanceRecord | Individual check-in | sessionId, actorId, dpuChainHash, gps |
+
+### Tenant Configuration (JSON)
+
+```json
+{
+  "hrdEnabled": true,
+  "hrdPassingScore": 60,
+  "hrdMinProgressPercent": 50,
+  "hrdMaxDailyLessons": 8,
+  "emonEnabled": true,
+  "emonApiUrl": "https://emon.hrd.go.kr/api/v1",
+  "emonInstitionId": "INST-001"
+}
+```
+
+---
+
+## Data Isolation Pattern
+
+### Scoped Prisma
+
+All center-specific queries go through scoped Prisma, which automatically filters by `center_id`:
+
+```typescript
+// Scoped: only returns data for the current center
+const schedules = await scopedPrisma.schedule.findMany();
+
+// Base: cross-center query (admin/audit only)
+const allCenters = await basePrisma.centers.findMany({
+  where: { partner_id: partnerId }
+});
+```
+
+### Row-Level Isolation
+
+Every data table includes `center_id` as a foreign key. The scoped Prisma middleware injects `WHERE center_id = ?` on every query automatically.
+
+| Layer | Mechanism | Scope |
+|-------|-----------|-------|
+| Application | Scoped Prisma middleware | Automatic per-request |
+| API | `requireCenterScope()` | Endpoint-level guard |
+| Database | center_id FK constraint | Schema-level |
+
+<Warning>
+  `basePrisma` bypasses tenant isolation. It must only be used for:
+  - Admin cross-center reporting
+  - Actor family lookups
+  - Partner platform aggregation
+  - System-level operations (cron, migration)
+</Warning>

@@ -14,6 +14,7 @@
     "href": "https://cronozen.com"
   },
   "favicon": "/images/favicon.svg",
+  "openapi": "openapi.yaml",
   "navigation": {
     "groups": [
       {
@@ -21,7 +22,8 @@
         "pages": [
           "introduction",
           "getting-started/quickstart",
-          "getting-started/concepts"
+          "getting-started/concepts",
+          "ai-context"
         ]
       },
       {
@@ -60,7 +62,8 @@
         "group": "Guides",
         "pages": [
           "guides/white-label-setup",
-          "guides/lms-integration"
+          "guides/lms-integration",
+          "guides/data-model"
         ]
       },
       {

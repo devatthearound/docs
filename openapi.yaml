@@ -1,0 +1,999 @@
+openapi: 3.1.0
+info:
+  title: Cronozen Platform API
+  description: |
+    Multi-tenant SaaS platform API for center management, authentication,
+    decision proof (DPU), and partner operations.
+  version: 1.0.0
+  contact:
+    email: support@cronozen.com
+    url: https://docs.cronozen.com
+
+servers:
+  - url: https://cronozen.com/api
+    description: Production
+  - url: https://stg.cronozen.com/api
+    description: Staging
+
+security:
+  - bearerAuth: []
+
+tags:
+  - name: Auth
+    description: Authentication, session management, SSO
+  - name: Centers
+    description: Center (tenant) management and lookup
+  - name: Partner
+    description: Partner platform APIs for white-label management
+  - name: DPU
+    description: Decision Proof Unit — tamper-evident audit trails
+  - name: Provisioning
+    description: Tenant creation and plan management
+  - name: Subscription
+    description: Billing and subscription management
+
+paths:
+  # ── Auth ──────────────────────────────────────────
+  /auth/login:
+    post:
+      tags: [Auth]
+      summary: Login user
+      description: Authenticate with email/phone and password. Returns JWT with multi-tenant context.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password]
+              properties:
+                email:
+                  type: string
+                  format: email
+                  example: admin@center.com
+                password:
+                  type: string
+                  format: password
+                  example: securePassword123
+                centerDomain:
+                  type: string
+                  description: Optional center domain for direct login
+                  example: slowstep
+      responses:
+        '200':
+          description: Login successful
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          description: Rate limited (max 5 attempts per 15 minutes)
+
+  /auth/me:
+    get:
+      tags: [Auth]
+      summary: Get current user
+      description: Returns authenticated user info with actor family, center memberships, and authorized domains.
+      responses:
+        '200':
+          description: User info
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    type: object
+                    properties:
+                      actorId:
+                        type: string
+                      email:
+                        type: string
+                      name:
+                        type: string
+                      role:
+                        type: string
+                        enum: [ADMIN, INSTRUCTOR, PARENT, CHILD]
+                      centerId:
+                        type: integer
+                      centerDomain:
+                        type: string
+                      authorizedDomains:
+                        type: array
+                        items:
+                          type: string
+                      memberships:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/Membership'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /auth/switch-center:
+    post:
+      tags: [Auth]
+      summary: Switch center context
+      description: Switch to a different center. Requires active membership in the target center.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [centerId]
+              properties:
+                centerId:
+                  type: integer
+                  example: 2
+      responses:
+        '200':
+          description: Center switched, new JWT issued
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthResponse'
+        '403':
+          description: No active membership in target center
+
+  /auth/refresh-token:
+    post:
+      tags: [Auth]
+      summary: Refresh JWT token
+      description: Rotate access token using refresh token. Implements sid-based reuse detection.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [refreshToken]
+              properties:
+                refreshToken:
+                  type: string
+      responses:
+        '200':
+          description: New token pair issued
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthResponse'
+
+  /auth/sso/token:
+    post:
+      tags: [Auth]
+      summary: Generate SSO token
+      description: Generate a single-use SSO token for cross-app login (OPS → LMS, OPS → CMS).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [targetApp]
+              properties:
+                targetApp:
+                  type: string
+                  enum: [lms, cms, erp]
+      responses:
+        '200':
+          description: SSO token generated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    type: object
+                    properties:
+                      token:
+                        type: string
+                      expiresAt:
+                        type: string
+                        format: date-time
+
+  /auth/sso/verify:
+    post:
+      tags: [Auth]
+      summary: Verify SSO token
+      description: Verify and consume a single-use SSO token. Called by spoke apps (LMS, CMS).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [token]
+              properties:
+                token:
+                  type: string
+      responses:
+        '200':
+          description: Token valid, user data returned
+        '401':
+          description: Invalid or expired token
+
+  # ── Centers ──────────────────────────────────────
+  /centers/{domain}:
+    get:
+      tags: [Centers]
+      summary: Get center by domain
+      description: Retrieve center details by its domain slug.
+      parameters:
+        - name: domain
+          in: path
+          required: true
+          schema:
+            type: string
+          example: slowstep
+      responses:
+        '200':
+          description: Center details
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    $ref: '#/components/schemas/Center'
+
+  /centers/{domain}/info:
+    get:
+      tags: [Centers]
+      summary: Get center public info
+      description: Public center information (no auth required). Used for landing pages.
+      security: []
+      parameters:
+        - name: domain
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Public center info
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    type: object
+                    properties:
+                      name:
+                        type: string
+                      description:
+                        type: string
+                      logo:
+                        type: string
+                      vertical:
+                        type: string
+
+  /centers/{domain}/instructors:
+    get:
+      tags: [Centers]
+      summary: List center instructors
+      description: Get instructors with active membership in the center.
+      parameters:
+        - name: domain
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Instructor list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id:
+                          type: string
+                        name:
+                          type: string
+                        role:
+                          type: string
+                        specialties:
+                          type: array
+                          items:
+                            type: string
+
+  /centers/{domain}/available-slots:
+    get:
+      tags: [Centers]
+      summary: Get available booking slots
+      description: Available session time slots for scheduling.
+      parameters:
+        - name: domain
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: date
+          in: query
+          schema:
+            type: string
+            format: date
+        - name: instructorId
+          in: query
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Available slots
+
+  /centers/search:
+    post:
+      tags: [Centers]
+      summary: Search centers
+      description: Search centers by name, domain, or location.
+      security: []
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                query:
+                  type: string
+                  example: "rehabilitation"
+                vertical:
+                  type: string
+                  enum: [rehabilitation, welfare, education, pharmacy, commerce, mentoring, interior]
+      responses:
+        '200':
+          description: Search results
+
+  # ── Partner ──────────────────────────────────────
+  /partner/centers:
+    get:
+      tags: [Partner]
+      summary: List partner centers
+      description: List all centers managed by the authenticated partner organization.
+      parameters:
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/Limit'
+        - name: search
+          in: query
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Partner centers list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Center'
+                  pagination:
+                    $ref: '#/components/schemas/Pagination'
+    post:
+      tags: [Partner]
+      summary: Create center
+      description: Create a new center under the partner organization.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, tenantType, vertical, adminEmail]
+              properties:
+                name:
+                  type: string
+                  example: New Center
+                tenantType:
+                  type: string
+                  enum: [CENTER, WORKSPACE, WHITE_LABEL]
+                vertical:
+                  type: string
+                  enum: [rehabilitation, welfare, education, pharmacy, commerce, mentoring, interior]
+                adminEmail:
+                  type: string
+                  format: email
+      responses:
+        '201':
+          description: Center created
+
+  /partner/centers/{centerId}:
+    get:
+      tags: [Partner]
+      summary: Get center details
+      parameters:
+        - name: centerId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Center details
+    patch:
+      tags: [Partner]
+      summary: Update center
+      parameters:
+        - name: centerId
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                status:
+                  type: string
+                  enum: [ACTIVE, SUSPENDED]
+      responses:
+        '200':
+          description: Center updated
+
+  /partner/stats/dashboard:
+    get:
+      tags: [Partner]
+      summary: Partner dashboard statistics
+      description: Aggregated statistics across all partner-managed centers.
+      responses:
+        '200':
+          description: Dashboard stats
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    type: object
+                    properties:
+                      totalCenters:
+                        type: integer
+                      totalMembers:
+                        type: integer
+                      activeToday:
+                        type: integer
+                      revenue:
+                        type: object
+
+  /partner/audit:
+    get:
+      tags: [Partner]
+      summary: Partner audit log
+      description: Audit log entries across all partner-managed centers.
+      parameters:
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/Limit'
+        - name: startDate
+          in: query
+          schema:
+            type: string
+            format: date
+        - name: endDate
+          in: query
+          schema:
+            type: string
+            format: date
+      responses:
+        '200':
+          description: Audit entries
+
+  /partner/members:
+    get:
+      tags: [Partner]
+      summary: List all partner members
+      description: Members across all partner-managed centers.
+      parameters:
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/Limit'
+      responses:
+        '200':
+          description: Member list
+
+  /partner/settings:
+    get:
+      tags: [Partner]
+      summary: Get partner settings
+      responses:
+        '200':
+          description: Partner settings
+    patch:
+      tags: [Partner]
+      summary: Update partner settings
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        '200':
+          description: Settings updated
+
+  # ── DPU ──────────────────────────────────────────
+  /dpu/{id}:
+    get:
+      tags: [DPU]
+      summary: Get DPU record
+      description: Retrieve a Decision Proof Unit by ID.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: DPU record
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    $ref: '#/components/schemas/DPU'
+    put:
+      tags: [DPU]
+      summary: Update DPU metadata
+      description: Update DPU status or metadata. Cannot modify sealed (AUDIT_READY) records.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                evidenceLevel:
+                  type: string
+                  enum: [DRAFT, DOCUMENTED, AUDIT_READY]
+                metadata:
+                  type: object
+      responses:
+        '200':
+          description: DPU updated
+        '403':
+          description: Cannot modify sealed record
+
+  /dpu/{id}/export:
+    get:
+      tags: [DPU]
+      summary: Export DPU as JSON-LD
+      description: Export decision proof in JSON-LD v2 format (schema.cronozen.com/decision-proof/v2).
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: JSON-LD export
+          content:
+            application/ld+json:
+              schema:
+                type: object
+
+  /dpu/{id}/verify:
+    get:
+      tags: [DPU]
+      summary: Verify DPU chain integrity
+      description: Verify SHA-256 hash chain from this DPU back to genesis block.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Verification result
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    type: object
+                    properties:
+                      valid:
+                        type: boolean
+                      chainLength:
+                        type: integer
+                      genesisHash:
+                        type: string
+                      brokenAt:
+                        type: integer
+                        nullable: true
+                        description: Chain index where integrity breaks (null if valid)
+
+  /dpu/{id}/responsibility:
+    get:
+      tags: [DPU]
+      summary: Extract 6W responsibility
+      description: Extract Who, What, When, Where, Why, How from a decision.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: 6W extraction
+
+  /dpu/stats:
+    get:
+      tags: [DPU]
+      summary: DPU statistics
+      description: Global DPU statistics (total count, by evidence level, by vertical).
+      responses:
+        '200':
+          description: Statistics
+
+  /dpu/verify-chain:
+    get:
+      tags: [DPU]
+      summary: Verify entire hash chain
+      description: Verify the complete hash chain from genesis to latest DPU.
+      responses:
+        '200':
+          description: Full chain verification result
+
+  /dpu/demo:
+    post:
+      tags: [DPU]
+      summary: Create demo DPU
+      description: Create a DPU record for testing or LMS attendance proof integration.
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                content:
+                  type: string
+                  description: Decision content to record
+                referenceType:
+                  type: string
+                  enum: [lms-attendance, lms-event, demo]
+                referenceId:
+                  type: string
+                tags:
+                  type: array
+                  items:
+                    type: string
+      responses:
+        '201':
+          description: DPU created
+
+  # ── Provisioning ────────────────────────────────
+  /provisioning/center-tenant:
+    post:
+      tags: [Provisioning]
+      summary: Provision new center
+      description: |
+        Create a new center with full provisioning: center record, admin membership,
+        subscription, tenant mapping, and initial settings. Idempotent via orderId.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [centerName, subdomain, planId, orderId, adminActorId]
+              properties:
+                centerName:
+                  type: string
+                subdomain:
+                  type: string
+                  pattern: '^[a-z0-9-]{3,30}$'
+                planId:
+                  type: string
+                orderId:
+                  type: string
+                  description: Idempotency key
+                adminActorId:
+                  type: string
+                businessNumber:
+                  type: string
+                vertical:
+                  type: string
+      responses:
+        '201':
+          description: Center provisioned
+        '409':
+          description: Subdomain already taken
+
+  /provisioning/check-subdomain:
+    post:
+      tags: [Provisioning]
+      summary: Check subdomain availability
+      description: Validate if a subdomain is available and not reserved.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [subdomain]
+              properties:
+                subdomain:
+                  type: string
+      responses:
+        '200':
+          description: Availability result
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  available:
+                    type: boolean
+
+  /provisioning/center-plans:
+    get:
+      tags: [Provisioning]
+      summary: List center plans
+      description: Available subscription plans for center creation.
+      security: []
+      responses:
+        '200':
+          description: Plan list
+
+  /provisioning/lms-plans:
+    get:
+      tags: [Provisioning]
+      summary: List LMS plans
+      description: Available LMS subscription plans.
+      security: []
+      responses:
+        '200':
+          description: LMS plan list
+
+  # ── Subscription ────────────────────────────────
+  /center/subscription:
+    get:
+      tags: [Subscription]
+      summary: Get subscription
+      description: Current center subscription details including plan, billing cycle, and usage.
+      responses:
+        '200':
+          description: Subscription details
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    type: object
+                    properties:
+                      planId:
+                        type: string
+                      planName:
+                        type: string
+                      status:
+                        type: string
+                        enum: [ACTIVE, TRIAL, PAST_DUE, CANCELED, SUSPENDED]
+                      currentPeriodEnd:
+                        type: string
+                        format: date-time
+                      seatLimit:
+                        type: integer
+                      seatUsed:
+                        type: integer
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: JWT token from /auth/login or cookie-based session (auth_token)
+
+  parameters:
+    Page:
+      name: page
+      in: query
+      schema:
+        type: integer
+        default: 1
+    Limit:
+      name: limit
+      in: query
+      schema:
+        type: integer
+        default: 50
+        maximum: 100
+
+  schemas:
+    AuthResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        data:
+          type: object
+          properties:
+            accessToken:
+              type: string
+            refreshToken:
+              type: string
+            expiresIn:
+              type: integer
+              description: Token TTL in seconds
+            actor:
+              type: object
+              properties:
+                id:
+                  type: string
+                email:
+                  type: string
+                name:
+                  type: string
+                role:
+                  type: string
+                  enum: [ADMIN, INSTRUCTOR, PARENT, CHILD]
+            center:
+              type: object
+              properties:
+                id:
+                  type: integer
+                name:
+                  type: string
+                domain:
+                  type: string
+
+    Center:
+      type: object
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        centerDomain:
+          type: string
+        tenantType:
+          type: string
+          enum: [CENTER, WORKSPACE, PROGRAM, WHITE_LABEL]
+        status:
+          type: string
+          enum: [ACTIVE, SUSPENDED, INACTIVE]
+        vertical:
+          type: string
+          enum: [rehabilitation, welfare, education, pharmacy, commerce, mentoring, interior]
+        memberCount:
+          type: integer
+        settings:
+          type: object
+
+    Membership:
+      type: object
+      properties:
+        id:
+          type: string
+        centerId:
+          type: integer
+        centerName:
+          type: string
+        centerDomain:
+          type: string
+        role:
+          type: string
+          enum: [ADMIN, INSTRUCTOR, PARENT, CHILD]
+        status:
+          type: string
+          enum: [INVITED, PENDING, ACTIVE, SUSPENDED, REJECTED, ENDED]
+        invitedAt:
+          type: string
+          format: date-time
+        endedAt:
+          type: string
+          format: date-time
+          nullable: true
+
+    DPU:
+      type: object
+      properties:
+        id:
+          type: string
+        content:
+          type: string
+          description: Decision content
+        evidenceLevel:
+          type: string
+          enum: [DRAFT, DOCUMENTED, AUDIT_READY]
+        chainHash:
+          type: string
+          description: SHA-256 hash linking to previous DPU
+        chainIndex:
+          type: integer
+          description: Position in the hash chain
+        previousHash:
+          type: string
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+        createdBy:
+          type: string
+          description: Actor ID who created this decision
+        referenceType:
+          type: string
+          description: Source context (e.g., lms-attendance, workflow)
+        referenceId:
+          type: string
+        tags:
+          type: array
+          items:
+            type: string
+        metadata:
+          type: object
+
+    Pagination:
+      type: object
+      properties:
+        page:
+          type: integer
+        limit:
+          type: integer
+        total:
+          type: integer
+        totalPages:
+          type: integer
+
+  responses:
+    Unauthorized:
+      description: Invalid or expired token
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              success:
+                type: boolean
+                example: false
+              error:
+                type: object
+                properties:
+                  code:
+                    type: string
+                    example: UNAUTHORIZED
+                  message:
+                    type: string
+                    example: Invalid or expired token
