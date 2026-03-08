@@ -1,106 +1,103 @@
 {
-  "$schema": "https://mintlify.com/schema.json",
-  "theme": "mint",
+  "$schema": "https://mintlify.com/docs.json",
+  "theme": "maple",
   "name": "Cronozen Docs",
-  "logo": {
-    "dark": "/images/logo-dark.svg",
-    "light": "/images/logo-light.svg"
-  },
-  "favicon": "/images/favicon.svg",
+  "description": "Developer documentation for the Cronozen multi-tenant SaaS platform",
   "colors": {
     "primary": "#D97B57",
-    "light": "#E8A882",
-    "dark": "#C06A48",
-    "anchors": {
-      "from": "#D97B57",
-      "to": "#C06A48"
+    "light": "#FAF9F7",
+    "dark": "#C06A48"
+  },
+  "logo": {
+    "light": "/images/logo-light.svg",
+    "dark": "/images/logo-dark.svg",
+    "href": "https://cronozen.com"
+  },
+  "favicon": "/images/favicon.svg",
+  "navigation": {
+    "anchors": [
+      {
+        "anchor": "Guides",
+        "icon": "book",
+        "href": "/"
+      },
+      {
+        "anchor": "API Reference",
+        "icon": "terminal",
+        "href": "/api-reference"
+      },
+      {
+        "anchor": "Blog",
+        "icon": "newspaper",
+        "href": "https://blog.cronozen.com"
+      }
+    ],
+    "groups": [
+      {
+        "group": "Getting Started",
+        "pages": [
+          "getting-started/introduction",
+          "getting-started/quickstart",
+          "getting-started/concepts"
+        ]
+      },
+      {
+        "group": "Architecture",
+        "pages": [
+          "architecture/overview",
+          "architecture/multi-tenant",
+          "architecture/dpu",
+          "architecture/proof-pipeline"
+        ]
+      },
+      {
+        "group": "Authentication",
+        "pages": [
+          "auth/overview",
+          "auth/jwt",
+          "auth/multi-tenant-auth"
+        ]
+      },
+      {
+        "group": "Tenant System",
+        "pages": [
+          "tenant/overview",
+          "tenant/workspace",
+          "tenant/membership"
+        ]
+      },
+      {
+        "group": "AI Agents",
+        "pages": [
+          "agents/overview",
+          "agents/workflow"
+        ]
+      },
+      {
+        "group": "API Reference",
+        "pages": [
+          "api-reference/overview",
+          "api-reference/authentication",
+          "api-reference/tenants",
+          "api-reference/workflows"
+        ]
+      }
+    ]
+  },
+  "topbar": {
+    "links": [
+      {
+        "name": "Platform",
+        "url": "https://cronozen.com"
+      }
+    ],
+    "cta": {
+      "name": "Get Started",
+      "url": "https://cronozen.com/auth"
     }
   },
-  "topbarLinks": [
-    {
-      "name": "Blog",
-      "url": "https://blog.cronozen.com"
-    },
-    {
-      "name": "Platform",
-      "url": "https://cronozen.com"
-    }
-  ],
-  "topbarCtaButton": {
-    "name": "Get Started",
-    "url": "https://cronozen.com/auth"
-  },
-  "tabs": [
-    {
-      "name": "API Reference",
-      "url": "api-reference"
-    }
-  ],
-  "anchors": [
-    {
-      "name": "GitHub",
-      "icon": "github",
-      "url": "https://github.com/cronozen"
-    },
-    {
-      "name": "Blog",
-      "icon": "newspaper",
-      "url": "https://blog.cronozen.com"
-    }
-  ],
-  "navigation": [
-    {
-      "group": "Getting Started",
-      "pages": [
-        "getting-started/introduction",
-        "getting-started/quickstart",
-        "getting-started/concepts"
-      ]
-    },
-    {
-      "group": "Architecture",
-      "pages": [
-        "architecture/overview",
-        "architecture/multi-tenant",
-        "architecture/dpu",
-        "architecture/proof-pipeline"
-      ]
-    },
-    {
-      "group": "Authentication",
-      "pages": [
-        "auth/overview",
-        "auth/jwt",
-        "auth/multi-tenant-auth"
-      ]
-    },
-    {
-      "group": "Tenant System",
-      "pages": [
-        "tenant/overview",
-        "tenant/workspace",
-        "tenant/membership"
-      ]
-    },
-    {
-      "group": "AI Agents",
-      "pages": [
-        "agents/overview",
-        "agents/workflow"
-      ]
-    },
-    {
-      "group": "API Reference",
-      "pages": [
-        "api-reference/overview",
-        "api-reference/authentication",
-        "api-reference/tenants",
-        "api-reference/workflows"
-      ]
-    }
-  ],
   "footerSocials": {
     "website": "https://cronozen.com",
-    "github": "https://github.com/cronozen"
+    "github": "https://github.com/devatthearound"
   }
 }
