@@ -1,27 +1,58 @@
 ---
-title: "DPU (Decision Proof Unit)"
-description: "Tamper-evident decision tracking with SHA-256 hash chains"
+title: "DPU Engine"
+description: "Decision Proof Unit — tamper-evident decision tracking with SHA-256 hash chains and 5-level governance"
 ---
 
-# DPU — Decision Proof Unit
+# DPU Engine
 
-The DPU system provides **cryptographic proof** that decisions were made following proper governance procedures.
+## The Problem
 
-## How It Works
+When organizations adopt AI, decisions get faster. But one question becomes unanswerable:
 
-Each decision record forms a link in a SHA-256 hash chain:
+**"Why was this decision made, on what basis, and under whose approval?"**
+
+| Problem | Current State | Real Impact |
+|---------|--------------|-------------|
+| No decision provenance | Logs only record "approved" | Cannot explain during audit |
+| No policy versioning | Only current policy exists | Cannot verify past decisions' legality |
+| AI black box | Only model output stored | Context of confidence scores lost |
+| Unclear responsibility | Only approver ID logged | Decision chain untraceable |
+| No integrity guarantee | Regular DB records | Post-hoc tampering undetectable |
+
+This isn't solved by logging more. Decisions must be **designed as provable units**.
+
+## What is DPU?
+
+DPU (Decision Proof Unit) is a sealed proof structure that bundles input data, applied policies, AI reasoning, approval chains, and hash links into a single tamper-evident unit.
 
 ```
-Genesis Block
-  ↓ hash
-Decision #1 (content + previousHash + timestamp)
-  ↓ hash
-Decision #2 (content + previousHash + timestamp)
-  ↓ hash
-Decision #3 ...
+┌─────────────────────────────────────────────────┐
+│              DPU (Decision Proof Unit)           │
+│                                                   │
+│  ┌──────────┐  ┌──────────┐  ┌───────────────┐  │
+│  │ Evidence  │  │ AI Output│  │ Policy v2.3   │  │
+│  │ Input     │  │ + Mode   │  │ Snapshot      │  │
+│  └──────────┘  └──────────┘  └───────────────┘  │
+│                                                   │
+│  ┌──────────┐  ┌──────────┐  ┌───────────────┐  │
+│  │ Approval │  │ Risk     │  │ Chain Hash    │  │
+│  │ Chain    │  │ Level    │  │ Link          │  │
+│  └──────────┘  └──────────┘  └───────────────┘  │
+│                                                   │
+│  ═══════════════════════════════════════════════  │
+│  Sealed Envelope  |  Hash: a7f3...  |  Immutable │
+└─────────────────────────────────────────────────┘
 ```
 
-### Hash Computation
+## Three Design Principles
+
+### 1. Point-in-Time Capture
+
+DPU stores a **snapshot of the applied policy** at the moment of decision. Even if the policy changes later, you can always verify whether the decision was legal at the time.
+
+### 2. Hash Chain Integrity
+
+Every DPU references the previous DPU's hash, forming a sequential chain. If any record in the chain is tampered with, all subsequent hashes become inconsistent — **immediately detectable**.
 
 ```typescript
 function computeChainHash(
@@ -33,6 +64,111 @@ function computeChainHash(
 }
 ```
 
+### 3. Governance Guards
+
+Before a DPU can be sealed, it must pass through a series of verification steps. Evidence level, human review, risk threshold, dual approval — all policy-defined conditions must be satisfied.
+
+## 3-Layer Architecture
+
+```
+┌─────────────────────────────────────────────────────┐
+│                   DPU Pro Layer                       │
+│                                                       │
+│   Governance Guards · Compliance Engine · Audit       │
+│   Policy enforcement · Regulatory status · Tracking   │
+├───────────────────────────────────────────────────────┤
+│                   DPU Core Layer                       │
+│                                                       │
+│   Hash Chain · Canonicalization · Envelope · Policy    │
+│   Pure computation · Zero dependencies · Deterministic │
+├───────────────────────────────────────────────────────┤
+│                 Connector Layer                         │
+│                                                       │
+│   Storage Adapter Interface → Prisma / PostgreSQL      │
+│   Database agnostic · Swappable implementation         │
+└───────────────────────────────────────────────────────┘
+```
+
+### DPU Core — Pure Computation Engine
+
+DPU Core has **zero external dependencies**. This is intentional.
+
+- **Hash Chain**: Each DPU takes the previous DPU's hash as input, forming a sequential chain verifiable at any point
+- **Canonicalization**: Normalizes data so identical content always produces identical hashes regardless of JSON key order, whitespace, or encoding
+- **Policy Hash**: Hashes the policy document itself for integrity — compare creation-time hash with current hash to detect policy changes
+- **Envelope**: Packages all components into a single sealed unit
+
+<Info>
+  Core has no external dependencies because proof reliability depends on computational determinism. Same input must produce same output everywhere, and library version changes must never alter hash results.
+</Info>
+
+### DPU Pro — Governance Layer
+
+5 Governance Guards execute sequentially. **If any guard fails, the DPU is not created.**
+
+```
+Request → Guard 1 → Guard 2 → Guard 3 → Guard 4 → Guard 5 → DPU Sealed
+           │          │          │          │          │
+        Evidence   Human     Risk       Dual      Compliance
+        Level      Review    Threshold  Approval   Logging
+           │          │          │          │          │
+           ▼          ▼          ▼          ▼          ▼
+        On fail:   On fail:   On fail:  On fail:   On fail:
+        DENY       DENY       DENY      DENY       DENY
+```
+
+**Guard 1 — Evidence Level**
+
+| Level | Meaning | DPU Creation |
+|-------|---------|-------------|
+| `DRAFT` | Draft, key evidence missing | Policy-dependent |
+| `DOCUMENTED` | Partially documented | Conditional |
+| `AUDIT_READY` | Complete, audit-ready | Allowed |
+
+**Guard 2 — Human Review**
+
+| AI Mode | Description | Human Review Required |
+|---------|------------|----------------------|
+| `RECOMMENDATION` | AI suggests only | Low |
+| `ANALYSIS` | AI analyzes/classifies | Medium |
+| `PREDICTION` | AI predicts outcomes | High |
+| `AUTONOMOUS` | AI decides independently | **Maximum — human approval mandatory** |
+
+**Guard 3 — Risk Threshold**
+
+Evaluates whether the decision's risk level (`LOW`, `MEDIUM`, `HIGH`, `CRITICAL`) falls within policy-allowed thresholds. Combined with data sensitivity (`PUBLIC`, `INTERNAL`, `PII`, `PHI`).
+
+**Guard 4 — Dual Approval**
+
+High-risk decisions require two independent approvers. Self-approval is blocked.
+
+**Guard 5 — Compliance Logging**
+
+All guard results (pass or fail) are permanently logged. **Guard bypass attempts themselves become evidence.**
+
+<Warning>
+  The existence of a DPU proves that all 5 guards were passed. An auditor can verify policy compliance simply by confirming the DPU exists.
+</Warning>
+
+### Connector Layer — Storage Abstraction
+
+DPU Core defines a `DPUStorageAdapter` interface. The connector implements it. Currently Prisma + PostgreSQL is provided. **Core doesn't know Prisma exists.**
+
+```
+DPU Core                  Connector               Database
+   │                         │                        │
+   │  save(envelope)         │                        │
+   │ ───────────────────→    │  INSERT INTO            │
+   │                         │  decision_proof_units   │
+   │                         │ ──────────────────→     │
+   │                         │                        │
+   │  verify(id)             │                        │
+   │ ───────────────────→    │  SELECT + Hash Check    │
+   │                         │ ──────────────────→     │
+   │        result           │        record           │
+   │ ←───────────────────    │ ←──────────────────     │
+```
+
 ## Evidence Levels
 
 | Level | Name | Value | Mutability |
@@ -41,26 +177,22 @@ function computeChainHash(
 | 1 | `DOCUMENTED` | Formally documented | Editable with audit trail |
 | 2 | `AUDIT_READY` | Locked for audit | **Immutable** — modification breaks chain |
 
-<Warning>
-  Once a record reaches `AUDIT_READY`, any modification will break the hash chain. This is by design — it provides tamper evidence.
-</Warning>
-
-## 5-Level Governance
-
-Every decision goes through up to 5 governance checks:
-
-1. **Policy Existence** — Is there a policy governing this decision?
-2. **Evidence Level** — Is the evidence sufficient for the decision type?
-3. **Human Review** — Has a qualified human reviewed the decision?
-4. **Risk Threshold** — Does the risk level require escalation?
-5. **Dual Approval** — Do high-risk decisions have two independent approvers?
+```
+DRAFT ──────→ DOCUMENTED ──────→ AUDIT_READY
+  │                │                    │
+  ▼                ▼                    ▼
+Draft created    Evidence secured     Audit-ready
+AI suggestion    Review in progress   All guards passed
+Hash generated   Reviewer assigned    Hash chain sealed
+```
 
 ## Packages
 
-| Package | Purpose |
-|---------|---------|
-| `@cronozen/dpu-core` | Domain-independent, zero DB dependency |
-| `@cronozen/dpu-pro` | Governance layer with full audit support |
+| Package | Purpose | Dependencies |
+|---------|---------|-------------|
+| `@cronozen/dpu-core` | Domain-independent engine | Zero (pure computation) |
+| `@cronozen/dpu-pro` | Governance + compliance | dpu-core only |
+| `dpu-connector-prisma` | PostgreSQL adapter | Prisma |
 
 ## Export Format
 
@@ -74,12 +206,41 @@ DPU records export as **JSON-LD v2**:
   "evidenceLevel": "AUDIT_READY",
   "chainHash": "sha256:abc123...",
   "previousHash": "sha256:def456...",
+  "policySnapshot": {
+    "version": "2.3",
+    "hash": "sha256:b4e2..."
+  },
   "timestamp": "2026-03-08T09:00:00Z"
 }
 ```
 
+## Audit: DPU vs Traditional Logging
+
+**Traditional system:**
+```
+Auditor: "Explain approval KR-2025-08-1847."
+Staff: "The log says 'approved'... I'm not sure which policy applied."
+→ Result: Audit finding, corrective action required.
+```
+
+**DPU-based system:**
+```
+┌─ DPU #1847 ──────────────────────────────────┐
+│  Decision: Voucher auto-approval              │
+│  Date: 2025-08-14 09:23:17 KST               │
+│                                               │
+│  AI: RECOMMENDATION mode, confidence 94.2%    │
+│  Policy: v2.1 (hash: b4e2...) — legal at time │
+│  Guards: All 5 PASSED                         │
+│  Chain: hash #1846 → #1847, integrity PASSED  │
+│  Responsibility: AI(suggest) → System(approve) │
+└───────────────────────────────────────────────┘
+→ Result: Legality proven instantly. Audit passed.
+```
+
 ## Audit System
 
-- Append-only SQL protection
-- 12 event types tracked
-- All `basePrisma` cross-center operations are audited
+- **Append-only SQL protection** — audit logs cannot be modified or deleted
+- **12 event types** tracked across all operations
+- **All `basePrisma` cross-center operations** are audited
+- **Guard failures** are permanently recorded as DENIED events

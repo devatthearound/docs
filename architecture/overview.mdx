@@ -1,68 +1,162 @@
 ---
 title: "Architecture Overview"
-description: "Cronozen platform architecture — hub-and-spoke ecosystem"
+description: "Cronozen platform architecture — hub-and-spoke multi-tenant SaaS OS"
 ---
 
 # Architecture Overview
 
-## Hub-and-Spoke Model
+## The Problem
 
-Cronozen is designed as a **hub-and-spoke** ecosystem where OPS acts as the central hub.
+Korea's social service industry — child rehabilitation, welfare, education, pharmacy — still runs on **fragmented legacy systems**.
+
+| Reality | Consequence |
+|---------|------------|
+| Each center adopts separate solutions | Data silos, duplicate investment |
+| Manual records + spreadsheets | No audit trail, compliance risk |
+| AI adoption attempts | No decision provenance, trust failure |
+| Voucher/policy changes | Manual updates, errors, revenue leakage |
+
+The core problem isn't just "digital transformation." It's the absence of an architecture that can answer: **"Who verified an AI decision, how, and why?"**
+
+## The Solution
+
+Cronozen is a full-stack platform with **Decision Proof Unit (DPU)** as its core primitive. Three design principles:
+
+1. **Provable Decisions** — Every AI recommendation is sealed in a DPU envelope with evidence, confidence scores, risk levels, and approval chains
+2. **One Backend, Infinite Context** — Rehab centers, welfare agencies, pharmacies all run on the same infrastructure with fully isolated tenant contexts
+3. **Policy as Runtime** — National, regional, and center-level policies are automatically applied at runtime with temporal validity
+
+## Hub-and-Spoke Ecosystem
 
 ```
-                    ┌─────────────┐
-                    │   OPS Hub   │
-                    │ cronozen.com│
-                    └──────┬──────┘
-                           │
-            ┌──────────────┼──────────────┐
-            │              │              │
-     ┌──────┴──────┐ ┌────┴────┐ ┌───────┴──────┐
-     │     LMS     │ │   CMS   │ │     ERP      │
-     │learn.cronozen│ │blog.cronozen│ │erp.cronozen│
-     └─────────────┘ └─────────┘ └──────────────┘
+┌─────────────────────────────────────────────────────────────┐
+│                      CLIENT LAYER                            │
+│                                                              │
+│   slowpace.co.kr    cronozen.com    learn.cronozen.com      │
+│        │                │                │                   │
+│        └────────────────┼────────────────┘                   │
+│                         │  Domain Router                     │
+│                         ▼                                    │
+├──────────────────────────────────────────────────────────────┤
+│                   EDGE MIDDLEWARE                             │
+│          JWT Auth · RBAC · Tenant Resolution · Rate Limit    │
+├──────────────────────────────────────────────────────────────┤
+│                                                              │
+│                   APPLICATION LAYER                           │
+│                   (Next.js 16 + TypeScript)                   │
+│                                                              │
+│  ┌──────────┐  ┌──────────────┐  ┌──────────┐  ┌─────────┐ │
+│  │ API      │  │ AI System    │  │ Policy   │  │ Agent   │ │
+│  │ Routes   │  │              │  │ Engine   │  │ Orchest.│ │
+│  │          │  │ Multi-       │  │          │  │         │ │
+│  │ REST +   │  │ Provider     │  │ 4-Scope  │  │ Workflow│ │
+│  │ Server   │  │ RAG + NL→SQL │  │ Resolve  │  │ Engine  │ │
+│  │ Actions  │  │ 6W Extract.  │  │ Temporal │  │         │ │
+│  └────┬─────┘  └──────┬───────┘  └────┬─────┘  └───┬─────┘ │
+│       │               │               │             │       │
+│       └───────────────┼───────────────┼─────────────┘       │
+│                       ▼               ▼                      │
+│  ┌───────────────────────────────────────────────────────┐  │
+│  │            DPU ENGINE (Decision Proof Unit)             │  │
+│  │                                                         │  │
+│  │  ┌─────────────┐  ┌─────────────┐  ┌────────────────┐ │  │
+│  │  │ dpu-core    │  │ dpu-pro     │  │ dpu-connector  │ │  │
+│  │  │ Hash Chain  │  │ 5 Govern.   │  │ -prisma        │ │  │
+│  │  │ Canonical.  │  │ Guards      │  │ DB Adapter     │ │  │
+│  │  │ Envelope    │  │ Compliance  │  │                │ │  │
+│  │  └─────────────┘  └─────────────┘  └────────────────┘ │  │
+│  └───────────────────────────────────────────────────────┘  │
+│                              │                               │
+├──────────────────────────────┼───────────────────────────────┤
+│                        DATA LAYER                            │
+│                                                              │
+│  ┌──────────────────┐  ┌──────────────┐  ┌──────────────┐  │
+│  │ PostgreSQL       │  │ pgvector     │  │ Redis        │  │
+│  │ 200+ Tables      │  │ Embeddings   │  │ Cache +      │  │
+│  │ Prisma 6.18      │  │ Similarity   │  │ Session      │  │
+│  └──────────────────┘  └──────────────┘  └──────────────┘  │
+│                                                              │
+│           Security: Tenant Isolation · Audit Logging         │
+└──────────────────────────────────────────────────────────────┘
 ```
 
-### OPS Hub Responsibilities
+### OPS Hub
 
-- **SSO** — Single sign-on for all services (auth.cronozen.com)
-- **Payments** — Toss Payments integration, subscription management
+The central hub manages all cross-cutting concerns:
+
+- **SSO** — Single sign-on via `auth.cronozen.com`
+- **Payments** — Toss Payments, subscription management, billing
 - **Tenant Master** — Center/workspace provisioning and lifecycle
-- **DPU** — Decision Proof Unit (hash chain governance)
-- **7 Verticals** — Rehab, welfare, education, pharmacy, commerce, mentoring, interior
+- **DPU** — Decision Proof Unit with SHA-256 hash chains
+- **7 Verticals** — Rehabilitation, welfare, education, pharmacy, commerce, mentoring, interior
 
 ### Spoke Services
 
-| Service | Focus | Key Features |
-|---------|-------|-------------|
-| **LMS** | Learning | HRD-Net compliance, EMON, course management |
-| **CMS** | Content | Blog, manuals, SEO, multi-tenant content |
-| **ERP** | Business | Accounting, invoicing, HR (Odoo-based) |
+| Service | Domain | Focus |
+|---------|--------|-------|
+| **LMS** | learn.cronozen.com | Learning engine, HRD-Net compliance, EMON |
+| **CMS** | blog.cronozen.com | Blog, manuals, content management |
+| **ERP** | erp.cronozen.com | Business management (Odoo-based) |
+| **Docs** | docs.cronozen.com | Developer documentation (Mintlify) |
+
+## 7 Verticals
+
+All verticals share the same codebase, differentiated by tenant configuration:
+
+| Code | Vertical | Description |
+|------|----------|-------------|
+| Rehab | Child Rehabilitation | Voucher-based therapy session management |
+| Welfare | Welfare Benefits | Benefit application, processing, settlement |
+| Edu | Education Centers | Enrollment, curriculum, attendance |
+| Pharmacy | Pharmacy | Prescription tracking, inventory |
+| Market | Commerce | Coupons, promotions, local economy |
+| Mentoring | Mentoring | Expert matching, session tracking |
+| Interior | Interior | Space design, construction management |
+
+Each vertical uses **Centers** as the isolation boundary. Centers have workspaces, and within workspaces all data, permissions, and policies are scoped.
 
 ## Tech Stack
 
 | Layer | Technology |
 |-------|-----------|
 | Frontend | Next.js 16, TypeScript, Tailwind CSS |
-| Backend | Next.js API Routes, Prisma 6.18 |
+| Backend | Next.js API Routes (134+), Prisma 6.18 |
 | Database | PostgreSQL (pgvector), Redis |
 | Auth | JWT, SSO, multi-tenant session |
+| AI | Multi-provider (OpenAI, Claude, Gemini) |
 | Infra | AWS ECS Fargate, ECR, S3, CloudFront |
+| DNS/CDN | CloudFlare |
 | CI/CD | GitHub Actions |
 
 ## Data Flow
 
 ```
 Client Request
-  → CloudFlare (DNS + WAF)
-    → ECS Fargate (Next.js)
-      → Prisma (scoped to center_id)
-        → PostgreSQL (RDS, VPC internal)
+  → CloudFlare (DNS + WAF + Worker for white-label)
+    → ECS Fargate (Next.js 16)
+      → Edge Middleware (JWT + tenant resolution)
+        → API Route (scoped to center_id)
+          → Prisma 6.18 (row-level tenant isolation)
+            → PostgreSQL (RDS, VPC internal)
 ```
 
-## Deployment
+## Deployment Strategy
 
-| Branch | Environment | Auto-deploy |
-|--------|-------------|-------------|
-| `develop` | Staging | Yes |
-| `main` | Production | Yes |
+| Branch | Environment | URL | Auto-deploy |
+|--------|-------------|-----|-------------|
+| `develop` | Staging | stg.cronozen.com | Yes |
+| `main` | Production | cronozen.com | Yes |
+
+All repos follow the same pattern: `develop` → staging, `main` → production.
+
+## Security Architecture
+
+- **Tenant Isolation**: Row-level via `center_id` scoping in Prisma middleware
+- **Auth**: JWT with multi-tenant context, actor family linking
+- **Audit**: Append-only logs, 12 event types, `basePrisma` usage audited
+- **Cron**: All 39 cron routes require `verifyCronSecret()`
+- **Data Access**: All center access through `center_memberships` only — no backdoor
+
+<Info>
+  For deep dives into specific subsystems, see [Multi-Tenant Architecture](/architecture/multi-tenant), [DPU Engine](/architecture/dpu), and [Proof Pipeline](/architecture/proof-pipeline).
+</Info>

@@ -1,0 +1,264 @@
+---
+title: "Proof Pipeline"
+description: "5-stage evidence pipeline — from decision to audit-ready proof"
+---
+
+# Proof Pipeline
+
+## The Problem
+
+In public services, too many systems can't answer: **"Was this decision lawful?"**
+
+When welfare agencies approve benefits, rehab centers record therapy sessions, and local markets settle coupons — every decision must be auditable. But reality differs:
+
+| Problem | Consequence |
+|---------|------------|
+| Decision rationale scattered across logs | Cannot reconstruct during audit |
+| Policy versions not recorded | Cannot verify "at-the-time" legality |
+| Approval flows unstructured | Unclear responsibility |
+| No data integrity guarantee | Post-hoc tampering undetectable |
+| AI involvement opaque | Cannot comply with regulations |
+
+Audit response is always reactive. When issues arise, teams dig through logs, query databases, and rely on staff memory. This takes weeks with low-confidence results.
+
+Cronozen solves this at the design level: **every decision generates its proof at the moment of creation.**
+
+## The 5 Stages
+
+The Proof Pipeline consists of 5 sequential stages. If any stage fails, DPU creation is rejected — and the rejection itself is recorded.
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                    PROOF PIPELINE                            │
+│                                                              │
+│  ┌──────────┐   ┌──────────┐   ┌──────────┐                │
+│  │ Stage 1  │──▶│ Stage 2  │──▶│ Stage 3  │                │
+│  │ Evidence │   │ Policy   │   │ Guard    │                │
+│  │Collection│   │ Matching │   │Validation│                │
+│  └──────────┘   └──────────┘   └────┬─────┘                │
+│                                      │                      │
+│                                      ▼                      │
+│                               ┌──────────┐   ┌──────────┐  │
+│                               │ Stage 4  │──▶│ Stage 5  │  │
+│                               │Hash Chain│   │  Audit   │  │
+│                               │ Sealing  │   │  Ready   │  │
+│                               └──────────┘   └──────────┘  │
+│                                                              │
+└─────────────────────────────────────────────────────────────┘
+      ↑                                            │
+  Input Sources                              DPU Output
+  (User / AI /                          (Sealed, Chained,
+   Voice / System)                        Audit-Ready)
+```
+
+## Stage 1 — Evidence Collection
+
+All proof starts with evidence. This stage collects and structures data from multiple sources.
+
+- **Input sources**: User input, system events, AI analysis, voice input
+- **6W extraction**: Automatically extract Who, What, When, Where, Why, How from all evidence
+- **Data sensitivity**: Classify as `PUBLIC`, `INTERNAL`, `PII`, `PHI`
+- **Voice input**: Audio hash (SHA-256) → STT transcription → confidence score recording
+
+### 6W Structure
+
+The 6W extraction is core to the Proof Pipeline. Whether it's a welfare case record, a pharmacy exchange, or a coupon transaction — everything normalizes to the same 6W structure. This enables **cross-domain unified auditing**.
+
+```
+┌───────────────────────────────────────┐
+│  Who   │ Actor name, role, ID         │
+│  What  │ Action, description, category│
+│  When  │ Timestamp, timezone          │
+│  Where │ Location, system, context    │
+│  Why   │ Reason, policy ref, evidence │
+│  How   │ Method, tool, AI involvement │
+└───────────────────────────────────────┘
+```
+
+## Stage 2 — Policy Matching
+
+Once evidence is collected, it's matched against active policies for the domain.
+
+- **Policy scope**: Global → Country → Region → Center (4-level hierarchy)
+- **Temporal validity**: `validFrom` / `validUntil` time range verification
+- **Conflict resolution**: Multiple policies in same domain resolved by priority score
+- **Policy Snapshot**: Captured at this point and permanently preserved in the DPU
+
+<Info>
+  The matched policy's snapshot is frozen at this stage. Even if the policy changes later, the DPU preserves the "policy at time of decision" forever. Six months later, an auditor can reproduce the exact policy version that was applied.
+</Info>
+
+## Stage 3 — Guard Validation
+
+The gateway of the Proof Pipeline. 5 independent guards validate sequentially — **any failure rejects DPU creation**.
+
+```
+Guard 1: Evidence Level Guard
+┌─────────────────────────────────────────────────┐
+│  DRAFT ──────▶ DOCUMENTED ──────▶ AUDIT_READY   │
+│                                                  │
+│  Policy-required minimum Evidence Level check    │
+│  PHI data → AUDIT_READY enforced                 │
+└─────────────────────────────────────────────────┘
+
+Guard 2: Human Review Guard
+┌─────────────────────────────────────────────────┐
+│  Enforces human review for sensitive decisions   │
+│  Reviewer ID + role + approval time required     │
+│  Reviewer role must match policy-defined role    │
+└─────────────────────────────────────────────────┘
+
+Guard 3: Risk Threshold Guard
+┌─────────────────────────────────────────────────┐
+│  LOW ─── MEDIUM ─── HIGH ─── CRITICAL           │
+│  HIGH/CRITICAL → AI AUTONOMOUS mode blocked      │
+│  CRITICAL → minimum 2-person approval enforced   │
+└─────────────────────────────────────────────────┘
+
+Guard 4: Dual Approval Guard
+┌─────────────────────────────────────────────────┐
+│  When policy requires 2+ approvers:              │
+│  First + second approver both required           │
+│  Self-approval blocked                           │
+└─────────────────────────────────────────────────┘
+
+Guard 5: Compliance Logging Guard
+┌─────────────────────────────────────────────────┐
+│  All guard failures auto-logged to audit         │
+│  Failure reason, actor, time, policy code        │
+│  DENIED logs are undeletable                     │
+│  → Guard bypass attempts become evidence         │
+└─────────────────────────────────────────────────┘
+```
+
+<Warning>
+  **The existence of a DPU proves all 5 guards were passed.** Auditors can verify policy compliance simply by confirming the DPU exists.
+</Warning>
+
+## Stage 4 — Hash Chain Sealing
+
+All guards passed — evidence is now linked to the hash chain and sealed.
+
+```
+[Genesis DPU]     [DPU #1]          [DPU #2]
+┌───────────┐    ┌───────────┐    ┌───────────┐
+│ index: 0  │    │ index: 1  │    │ index: 2  │
+│ prevHash: │    │ prevHash: │    │ prevHash: │
+│  GENESIS  │◀───│  hash_0   │◀───│  hash_1   │
+│ chainHash:│    │ chainHash:│    │ chainHash:│
+│  hash_0   │    │  hash_1   │    │  hash_2   │
+│ policy:   │    │ policy:   │    │ policy:   │
+│ snapshot_0│    │ snapshot_1│    │ snapshot_2│
+└───────────┘    └───────────┘    └───────────┘
+
+chainHash = SHA-256(content + previousHash + timestamp)
+```
+
+Key operations:
+- **computeChainHash()**: Content + previous hash + timestamp → SHA-256 (after JSON key sorting canonicalization)
+- **generatePolicyHash()**: Policy version, settings, sensitivity level → separate hash
+- **createDPUEnvelope()**: Package all evidence, policy snapshot, chain link into tamper-evident unit
+
+Hash chains operate independently per domain. Welfare chain and pharmacy chain don't interfere — concurrent access uses serializable transactions to prevent index collisions.
+
+## Stage 5 — Audit-Ready Output
+
+Sealed DPU is stored immediately in audit-ready state.
+
+- **Audit status tracking**: `PENDING` → `PASSED` / `DENIED` / `FLAGGED`
+- **Responsibility Graph**: Tracks all actors (human + AI) involved in the decision
+- **verifyHashChain()**: Verify entire chain integrity at any time
+- **verifyDPUWithOriginalPolicy()**: Compare DPU's policy snapshot with current policy
+
+## Real-World Examples
+
+### Rehabilitation — Voucher Approval to Therapy Record
+
+```
+Voucher approval request
+     │
+     ▼
+[DPU #0] Voucher Approval
+├─ 6W: Who=Therapist, What=VoucherApproval, Why=TreatmentPlan
+├─ Evidence Level: DOCUMENTED
+├─ Guard: Human Review passed (therapist approval)
+├─ Guard: Risk=MEDIUM (medical decision)
+└─ Chain: hash_0 (Genesis)
+     │
+     ▼
+[DPU #1] Therapy Session Record
+├─ 6W: Who=Therapist, What=SessionCompleted, How=VoiceInput
+├─ Voice: transcript + confidence 0.94
+├─ Audio Hash: SHA-256(original audio)
+├─ Evidence Level: DOCUMENTED → AUDIT_READY
+└─ Chain: hash_1 ← hash_0
+     │
+     ▼
+[DPU #2] Progress Evaluation
+├─ 6W: Who=Supervisor, What=ProgressEval
+├─ Guard: Dual Approval (therapist + supervisor)
+├─ Evidence Level: AUDIT_READY
+└─ Chain: hash_2 ← hash_1
+
+→ 3 DPUs linked in one hash chain
+→ Entire voucher lifecycle is auditable
+```
+
+### Welfare — Benefit Application to Payment
+
+```
+Benefit application received
+     │
+     ▼
+[DPU #0] Case Registration (CASE_REGISTERED)
+├─ 6W: Who=SocialWorker, What=CaseRegistration
+├─ DataSensitivity: PII
+├─ Evidence Level: DRAFT
+└─ Chain: hash_0 (Genesis)
+     │
+     ▼
+[DPU #1] Eligibility Assessment (ASSESSMENT_COMPLETED)
+├─ 6W: Who=SocialWorker, What=Eligibility, How=AI-assisted
+├─ AI Mode: RECOMMENDATION (AI recommends, human decides)
+├─ Guard: Human Review passed
+├─ Evidence Level: DOCUMENTED
+└─ Chain: hash_1 ← hash_0
+     │
+     ▼
+[DPU #2] Payment Decision (CONTRACT_SIGNED)
+├─ 6W: Who=TeamLead+Worker, What=PaymentApproval
+├─ Guard: Dual Approval passed
+├─ Evidence Level: AUDIT_READY
+├─ Policy Snapshot: Benefit policy v2.3 recorded
+└─ Chain: hash_2 ← hash_1
+
+→ AI assisted but human made final judgment
+→ AI involvement scope vs human decision scope clearly separated
+```
+
+## Cross-Domain Patterns
+
+| Pattern | Description |
+|---------|------------|
+| Chain linking | All domains use hash chains to guarantee ordering |
+| Evidence progression | DRAFT → DOCUMENTED → AUDIT_READY maturation |
+| 6W normalization | Different domains, same 6W structure = unified audit |
+| Policy snapshot | At-the-time policy permanently preserved in DPU |
+| Non-blocking | DPU creation failure doesn't block business flow |
+
+## What This Achieves
+
+Audit response shifts from **investigation** to **lookup**. If a DPU exists, the policy was followed. If a DPU was rejected, the rejection reason is recorded. No log reconstruction or staff interviews needed.
+
+| Guarantee | Mechanism |
+|-----------|----------|
+| Integrity | SHA-256 Hash Chain — mid-chain tampering breaks all subsequent hashes |
+| Temporal accuracy | Policy Snapshot — at-the-time policy sealed in DPU |
+| Responsibility | Responsibility Graph — human/AI roles explicitly separated |
+| Evidence maturity | 3-level Evidence Level progression |
+| Bypass prevention | Guard failures permanently recorded as DENIED |
+| Domain independence | 6W normalization — rehab, welfare, commerce all auditable in same structure |
+
+<Info>
+  This is **compliance-by-design** — not reactive compliance, but compliance built into the architecture itself.
+</Info>

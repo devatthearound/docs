@@ -61,7 +61,8 @@
       "pages": [
         "architecture/overview",
         "architecture/multi-tenant",
-        "architecture/dpu"
+        "architecture/dpu",
+        "architecture/proof-pipeline"
       ]
     },
     {
