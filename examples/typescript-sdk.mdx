@@ -1,0 +1,404 @@
+---
+title: "TypeScript / Node.js"
+description: "Integrate Cronozen API with TypeScript and Node.js"
+---
+
+# TypeScript / Node.js
+
+Integrate the Cronozen platform into your TypeScript application.
+
+---
+
+## Setup
+
+```bash
+npm install axios
+```
+
+---
+
+## API Client
+
+```typescript
+// cronozen-client.ts
+import axios, { AxiosInstance } from 'axios';
+
+interface CronozenConfig {
+  baseUrl?: string;
+  token?: string;
+}
+
+interface LoginParams {
+  email: string;
+  password: string;
+  centerDomain?: string;
+}
+
+interface AuthResponse {
+  accessToken: string;
+  refreshToken: string;
+  expiresIn: number;
+  actor: {
+    id: string;
+    email: string;
+    name: string;
+    role: 'ADMIN' | 'INSTRUCTOR' | 'PARENT' | 'CHILD';
+  };
+  center: {
+    id: number;
+    name: string;
+    domain: string;
+  };
+}
+
+interface DPURecord {
+  id: string;
+  content: string;
+  evidenceLevel: 'DRAFT' | 'DOCUMENTED' | 'AUDIT_READY';
+  chainHash: string;
+  chainIndex: number;
+  createdAt: string;
+}
+
+class CronozenClient {
+  private http: AxiosInstance;
+  private token: string | null = null;
+
+  constructor(config: CronozenConfig = {}) {
+    this.http = axios.create({
+      baseURL: config.baseUrl || 'https://cronozen.com/api',
+      headers: { 'Content-Type': 'application/json' },
+    });
+
+    if (config.token) {
+      this.setToken(config.token);
+    }
+
+    // Auto-refresh on 401
+    this.http.interceptors.response.use(
+      (res) => res,
+      async (err) => {
+        if (err.response?.status === 401 && this.token) {
+          // Token expired — caller should handle refresh
+          throw new Error('Token expired. Call client.auth.refresh()');
+        }
+        throw err;
+      }
+    );
+  }
+
+  setToken(token: string) {
+    this.token = token;
+    this.http.defaults.headers.common['Authorization'] = `Bearer ${token}`;
+  }
+
+  // ── Auth ────────────────────────────────────────
+  auth = {
+    login: async (params: LoginParams): Promise<AuthResponse> => {
+      const { data } = await this.http.post('/auth/login', params);
+      if (data.success) {
+        this.setToken(data.data.accessToken);
+      }
+      return data.data;
+    },
+
+    me: async () => {
+      const { data } = await this.http.get('/auth/me');
+      return data.data;
+    },
+
+    switchCenter: async (centerId: number): Promise<AuthResponse> => {
+      const { data } = await this.http.post('/auth/switch-center', { centerId });
+      if (data.success) {
+        this.setToken(data.data.accessToken);
+      }
+      return data.data;
+    },
+
+    refresh: async (refreshToken: string): Promise<AuthResponse> => {
+      const { data } = await this.http.post('/auth/refresh-token', { refreshToken });
+      if (data.success) {
+        this.setToken(data.data.accessToken);
+      }
+      return data.data;
+    },
+
+    ssoToken: async (targetApp: 'lms' | 'cms' | 'erp') => {
+      const { data } = await this.http.post('/auth/sso/token', { targetApp });
+      return data.data;
+    },
+  };
+
+  // ── Centers ─────────────────────────────────────
+  centers = {
+    get: async (domain: string) => {
+      const { data } = await this.http.get(`/centers/${domain}`);
+      return data.data;
+    },
+
+    info: async (domain: string) => {
+      const { data } = await this.http.get(`/centers/${domain}/info`);
+      return data.data;
+    },
+
+    instructors: async (domain: string) => {
+      const { data } = await this.http.get(`/centers/${domain}/instructors`);
+      return data.data;
+    },
+
+    search: async (query: string, vertical?: string) => {
+      const { data } = await this.http.post('/centers/search', { query, vertical });
+      return data.data;
+    },
+
+    availableSlots: async (domain: string, date: string, instructorId?: string) => {
+      const params = new URLSearchParams({ date });
+      if (instructorId) params.set('instructorId', instructorId);
+      const { data } = await this.http.get(`/centers/${domain}/available-slots?${params}`);
+      return data.data;
+    },
+  };
+
+  // ── DPU ─────────────────────────────────────────
+  dpu = {
+    get: async (id: string): Promise<DPURecord> => {
+      const { data } = await this.http.get(`/dpu/${id}`);
+      return data.data;
+    },
+
+    create: async (params: {
+      content: string;
+      referenceType: string;
+      referenceId?: string;
+      tags?: string[];
+    }): Promise<DPURecord> => {
+      const { data } = await this.http.post('/dpu/demo', params);
+      return data.data;
+    },
+
+    verify: async (id: string) => {
+      const { data } = await this.http.get(`/dpu/${id}/verify`);
+      return data.data;
+    },
+
+    export: async (id: string) => {
+      const { data } = await this.http.get(`/dpu/${id}/export`);
+      return data.data;
+    },
+
+    stats: async () => {
+      const { data } = await this.http.get('/dpu/stats');
+      return data.data;
+    },
+  };
+
+  // ── Partner ─────────────────────────────────────
+  partner = {
+    centers: async (page = 1, limit = 50) => {
+      const { data } = await this.http.get(`/partner/centers?page=${page}&limit=${limit}`);
+      return data;
+    },
+
+    createCenter: async (params: {
+      name: string;
+      tenantType: string;
+      vertical: string;
+      adminEmail: string;
+    }) => {
+      const { data } = await this.http.post('/partner/centers', params);
+      return data.data;
+    },
+
+    dashboard: async () => {
+      const { data } = await this.http.get('/partner/stats/dashboard');
+      return data.data;
+    },
+
+    audit: async (page = 1) => {
+      const { data } = await this.http.get(`/partner/audit?page=${page}`);
+      return data;
+    },
+
+    members: async (page = 1) => {
+      const { data } = await this.http.get(`/partner/members?page=${page}`);
+      return data;
+    },
+  };
+}
+
+export { CronozenClient };
+export type { CronozenConfig, LoginParams, AuthResponse, DPURecord };
+```
+
+---
+
+## Usage Examples
+
+### Basic Authentication
+
+```typescript
+import { CronozenClient } from './cronozen-client';
+
+const client = new CronozenClient();
+
+// Login
+const auth = await client.auth.login({
+  email: 'admin@center.com',
+  password: 'secure-password',
+});
+
+console.log(`Logged in as ${auth.actor.name} (${auth.actor.role})`);
+console.log(`Center: ${auth.center.name}`);
+
+// Get current user
+const me = await client.auth.me();
+console.log(`Memberships: ${me.memberships.length} centers`);
+```
+
+### Multi-Center Operations
+
+```typescript
+const client = new CronozenClient();
+
+await client.auth.login({
+  email: 'admin@org.com',
+  password: 'password',
+});
+
+// Get user with all memberships
+const me = await client.auth.me();
+
+for (const membership of me.memberships) {
+  // Switch to each center
+  await client.auth.switchCenter(membership.centerId);
+
+  // Fetch center-specific data
+  const center = await client.centers.get(membership.centerDomain);
+  console.log(`${center.name}: ${center.memberCount} members`);
+}
+```
+
+### DPU: Record and Verify Decisions
+
+```typescript
+const client = new CronozenClient({ token: 'your-jwt-token' });
+
+// Record a decision
+const dpu = await client.dpu.create({
+  content: 'Approved therapy plan: 3 sessions/week for Patient #1234',
+  referenceType: 'therapy-plan',
+  referenceId: 'plan_1234',
+  tags: ['therapy', 'approval'],
+});
+
+console.log(`DPU created: ${dpu.id}`);
+console.log(`Chain hash: ${dpu.chainHash}`);
+console.log(`Evidence level: ${dpu.evidenceLevel}`); // DRAFT
+
+// Verify chain integrity
+const verification = await client.dpu.verify(dpu.id);
+console.log(`Chain valid: ${verification.valid}`);
+console.log(`Chain length: ${verification.chainLength}`);
+
+// Export as JSON-LD
+const proof = await client.dpu.export(dpu.id);
+// → JSON-LD v2 at schema.cronozen.com/decision-proof/v2
+```
+
+### Partner: Manage White-Label Centers
+
+```typescript
+const client = new CronozenClient({ token: 'partner-admin-token' });
+
+// Dashboard overview
+const stats = await client.partner.dashboard();
+console.log(`Total centers: ${stats.totalCenters}`);
+console.log(`Active today: ${stats.activeToday}`);
+
+// Create new center
+const newCenter = await client.partner.createCenter({
+  name: 'Gangnam Rehab Center',
+  tenantType: 'CENTER',
+  vertical: 'rehabilitation',
+  adminEmail: 'admin@gangnam-rehab.com',
+});
+
+// Audit trail
+const audit = await client.partner.audit();
+for (const entry of audit.data) {
+  console.log(`${entry.timestamp}: ${entry.action}`);
+}
+```
+
+### Cross-App SSO
+
+```typescript
+const opsClient = new CronozenClient({ token: 'ops-token' });
+
+// Generate SSO token for LMS
+const sso = await opsClient.auth.ssoToken('lms');
+
+// On the LMS side
+const lmsClient = new CronozenClient({
+  baseUrl: 'https://learn.cronozen.com/api',
+});
+
+// Verify SSO token → auto-login on LMS
+const lmsResponse = await lmsClient.http.post('/auth/sso/verify', {
+  token: sso.token,
+});
+```
+
+---
+
+## Error Handling
+
+```typescript
+import { CronozenClient } from './cronozen-client';
+import { AxiosError } from 'axios';
+
+const client = new CronozenClient();
+
+try {
+  await client.auth.login({
+    email: 'wrong@email.com',
+    password: 'wrong',
+  });
+} catch (error) {
+  if (error instanceof AxiosError) {
+    const { code, message } = error.response?.data?.error || {};
+
+    switch (code) {
+      case 'UNAUTHORIZED':
+        console.error('Invalid credentials');
+        break;
+      case 'RATE_LIMITED':
+        console.error('Too many attempts. Try again later.');
+        break;
+      case 'FORBIDDEN':
+        console.error('No membership in this center');
+        break;
+      default:
+        console.error(`API error: ${message}`);
+    }
+  }
+}
+```
+
+---
+
+## Environment Setup
+
+```typescript
+// Use environment variables for configuration
+const client = new CronozenClient({
+  baseUrl: process.env.CRONOZEN_API_URL || 'https://cronozen.com/api',
+  token: process.env.CRONOZEN_API_TOKEN,
+});
+```
+
+```bash
+# .env
+CRONOZEN_API_URL=https://cronozen.com/api
+CRONOZEN_API_TOKEN=your-jwt-token
+```

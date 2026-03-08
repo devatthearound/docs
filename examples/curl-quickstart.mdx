@@ -1,0 +1,257 @@
+---
+title: "cURL Quickstart"
+description: "Get started with the Cronozen API using cURL"
+---
+
+# cURL Quickstart
+
+Authenticate, access tenant data, and create decision proofs — all from the command line.
+
+---
+
+## 1. Login
+
+```bash
+curl -X POST https://cronozen.com/api/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{
+    "email": "admin@center.com",
+    "password": "your-password"
+  }'
+```
+
+```json
+{
+  "success": true,
+  "data": {
+    "accessToken": "eyJhbGciOiJIUzI1NiIs...",
+    "refreshToken": "eyJhbGciOiJIUzI1NiIs...",
+    "expiresIn": 3600,
+    "actor": {
+      "id": "actor_abc123",
+      "email": "admin@center.com",
+      "name": "Kim Admin",
+      "role": "ADMIN"
+    },
+    "center": {
+      "id": 1,
+      "name": "Seoul Rehab Center",
+      "domain": "seoul-rehab"
+    }
+  }
+}
+```
+
+Save the token for subsequent requests:
+
+```bash
+export TOKEN="eyJhbGciOiJIUzI1NiIs..."
+```
+
+---
+
+## 2. Get Current User
+
+```bash
+curl https://cronozen.com/api/auth/me \
+  -H "Authorization: Bearer $TOKEN"
+```
+
+```json
+{
+  "success": true,
+  "data": {
+    "actorId": "actor_abc123",
+    "email": "admin@center.com",
+    "role": "ADMIN",
+    "centerId": 1,
+    "centerDomain": "seoul-rehab",
+    "authorizedDomains": ["seoul-rehab", "busan-rehab"],
+    "memberships": [
+      {
+        "centerId": 1,
+        "centerName": "Seoul Rehab Center",
+        "role": "ADMIN",
+        "status": "ACTIVE"
+      },
+      {
+        "centerId": 2,
+        "centerName": "Busan Rehab Center",
+        "role": "ADMIN",
+        "status": "ACTIVE"
+      }
+    ]
+  }
+}
+```
+
+---
+
+## 3. Switch Center
+
+If you have memberships in multiple centers:
+
+```bash
+curl -X POST https://cronozen.com/api/auth/switch-center \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{ "centerId": 2 }'
+```
+
+A new JWT is issued with the target center context.
+
+---
+
+## 4. Get Center Info
+
+```bash
+curl https://cronozen.com/api/centers/seoul-rehab/info
+```
+
+```json
+{
+  "success": true,
+  "data": {
+    "name": "Seoul Rehab Center",
+    "description": "Child development rehabilitation center",
+    "vertical": "rehabilitation",
+    "logo": "https://cdn.cronozen.com/logos/seoul-rehab.svg"
+  }
+}
+```
+
+---
+
+## 5. List Instructors
+
+```bash
+curl https://cronozen.com/api/centers/seoul-rehab/instructors \
+  -H "Authorization: Bearer $TOKEN"
+```
+
+---
+
+## 6. Create a Decision Proof (DPU)
+
+Record a decision with tamper-evident hash chain:
+
+```bash
+curl -X POST https://cronozen.com/api/dpu/demo \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "content": "Approved therapy plan for patient #1234. Plan includes 3 sessions per week.",
+    "referenceType": "therapy-plan",
+    "referenceId": "plan_1234",
+    "tags": ["therapy", "approval", "rehab"]
+  }'
+```
+
+```json
+{
+  "success": true,
+  "data": {
+    "id": "dpu_xyz789",
+    "chainHash": "a1b2c3d4e5f6...",
+    "chainIndex": 42,
+    "evidenceLevel": "DRAFT",
+    "createdAt": "2026-03-08T10:30:00Z"
+  }
+}
+```
+
+---
+
+## 7. Verify Chain Integrity
+
+```bash
+curl https://cronozen.com/api/dpu/dpu_xyz789/verify \
+  -H "Authorization: Bearer $TOKEN"
+```
+
+```json
+{
+  "success": true,
+  "data": {
+    "valid": true,
+    "chainLength": 42,
+    "genesisHash": "0000abcd...",
+    "brokenAt": null
+  }
+}
+```
+
+---
+
+## 8. Export as JSON-LD
+
+```bash
+curl https://cronozen.com/api/dpu/dpu_xyz789/export \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Accept: application/ld+json"
+```
+
+---
+
+## 9. Cross-App SSO (OPS → LMS)
+
+Generate a single-use token for seamless login to LMS:
+
+```bash
+# Generate SSO token
+curl -X POST https://cronozen.com/api/auth/sso/token \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{ "targetApp": "lms" }'
+
+# Use on LMS
+curl -X POST https://learn.cronozen.com/api/auth/sso/verify \
+  -H "Content-Type: application/json" \
+  -d '{ "token": "sso-token-..." }'
+```
+
+---
+
+## 10. Partner: List Managed Centers
+
+```bash
+curl https://cronozen.com/api/partner/centers \
+  -H "Authorization: Bearer $TOKEN"
+```
+
+```json
+{
+  "success": true,
+  "data": [
+    {
+      "id": 1,
+      "name": "Seoul Rehab Center",
+      "centerDomain": "seoul-rehab",
+      "status": "ACTIVE",
+      "memberCount": 45
+    }
+  ],
+  "pagination": {
+    "page": 1,
+    "limit": 50,
+    "total": 3
+  }
+}
+```
+
+---
+
+## Rate Limits
+
+| Tier | Limit |
+|------|-------|
+| Standard | 100 requests/minute |
+| Partner | 500 requests/minute |
+
+Rate limit headers are included in every response:
+
+```
+X-RateLimit-Limit: 100
+X-RateLimit-Remaining: 95
+X-RateLimit-Reset: 1709900400
+```

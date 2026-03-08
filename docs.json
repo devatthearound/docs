@@ -21,6 +21,7 @@
         "group": "Getting Started",
         "pages": [
           "introduction",
+          "build-with-cronozen",
           "getting-started/quickstart",
           "getting-started/concepts",
           "ai-context"
@@ -30,6 +31,7 @@
         "group": "Architecture",
         "pages": [
           "architecture/overview",
+          "architecture/system-diagram",
           "architecture/multi-tenant",
           "architecture/dpu",
           "architecture/proof-pipeline"
@@ -64,6 +66,14 @@
           "guides/white-label-setup",
           "guides/lms-integration",
           "guides/data-model"
+        ]
+      },
+      {
+        "group": "Examples",
+        "pages": [
+          "examples/curl-quickstart",
+          "examples/typescript-sdk",
+          "examples/python-sdk"
         ]
       },
       {

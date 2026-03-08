@@ -1,0 +1,247 @@
+---
+title: "System Diagram"
+description: "Visual architecture of the Cronozen platform"
+---
+
+# System Diagram
+
+## Platform Overview
+
+```mermaid
+graph TB
+    subgraph Clients
+        Web[Web App]
+        Mobile[Mobile App]
+        Partner[Partner Dashboard]
+        AI[AI Agents / Cursor]
+    end
+
+    subgraph Edge["CloudFlare Edge"]
+        DNS[DNS + WAF]
+        Worker[CF Workers<br/>White-Label Proxy]
+    end
+
+    subgraph Hub["OPS Hub (cronozen.com)"]
+        Auth[Auth Service<br/>SSO + JWT]
+        Tenant[Tenant Service<br/>Multi-tenant]
+        DPU[DPU Engine<br/>Hash Chain]
+        Billing[Billing<br/>Toss Payments]
+        Workflow[AI Workflow<br/>Engine]
+    end
+
+    subgraph Spokes
+        LMS[LMS<br/>learn.cronozen.com]
+        CMS[CMS<br/>blog.cronozen.com]
+        ERP[ERP<br/>erp.cronozen.com]
+        Docs[Docs<br/>docs.cronozen.com]
+    end
+
+    subgraph Data
+        PG[(PostgreSQL<br/>+ pgvector)]
+        Redis[(Redis<br/>Cache)]
+        S3[(S3 + CDN<br/>Assets)]
+    end
+
+    Web --> DNS
+    Mobile --> DNS
+    Partner --> DNS
+    AI --> DNS
+
+    DNS --> Worker
+    Worker --> Hub
+
+    Auth --> PG
+    Tenant --> PG
+    DPU --> PG
+    Billing --> PG
+    Workflow --> Redis
+    Workflow --> PG
+
+    Hub -- SSO --> LMS
+    Hub -- SSO --> CMS
+    Hub -- SSO --> ERP
+    Hub -- DPU --> LMS
+
+    LMS --> PG
+    CMS --> PG
+    CMS --> S3
+```
+
+---
+
+## Request Flow
+
+```mermaid
+sequenceDiagram
+    participant C as Client
+    participant CF as CloudFlare
+    participant MW as Middleware
+    participant API as API Handler
+    participant DB as PostgreSQL
+
+    C->>CF: GET brand.co.kr/dashboard
+    CF->>CF: Worker: rewrite → cronozen.com/brand-slug/dashboard
+    CF->>MW: Forward request
+
+    MW->>MW: Extract JWT from cookie
+    MW->>MW: Resolve center from domain
+    MW->>MW: Inject scoped Prisma (center_id)
+
+    MW->>API: Request + { actorId, centerId, scopedPrisma }
+    API->>DB: SELECT * FROM schedules WHERE center_id = 1
+    DB-->>API: Tenant-isolated data
+    API-->>C: JSON response
+```
+
+---
+
+## Authentication Flow
+
+```mermaid
+sequenceDiagram
+    participant U as User
+    participant App as App (brand.co.kr)
+    participant Auth as Central Auth<br/>(auth.cronozen.com)
+    participant DB as Database
+
+    U->>App: Click "Login"
+    App->>Auth: Redirect with client_id=brand
+
+    U->>Auth: Enter credentials
+    Auth->>DB: Validate + check membership
+    DB-->>Auth: Actor + memberships
+
+    Auth->>Auth: Build JWT<br/>(actorId, centerId, role, domains)
+    Auth->>App: Redirect to callback with code
+
+    App->>Auth: Exchange code for token
+    Auth-->>App: JWT + refresh token
+
+    App->>App: Set cookie (host-only)
+    App-->>U: Dashboard
+```
+
+---
+
+## DPU Hash Chain
+
+```mermaid
+graph LR
+    G[Genesis Block<br/>hash: 0000...] --> D1[DPU #1<br/>hash: a1b2...]
+    D1 --> D2[DPU #2<br/>hash: c3d4...]
+    D2 --> D3[DPU #3<br/>hash: e5f6...]
+    D3 --> D4[DPU #4<br/>hash: g7h8...]
+
+    style G fill:#e8e2d9,stroke:#c06a48
+    style D1 fill:#faf9f7,stroke:#d97b57
+    style D2 fill:#faf9f7,stroke:#d97b57
+    style D3 fill:#faf9f7,stroke:#d97b57
+    style D4 fill:#faf9f7,stroke:#d97b57
+```
+
+Each block's hash is computed from:
+```
+SHA-256(content + previousHash + timestamp)
+```
+
+Tampering with any record breaks all downstream hashes.
+
+---
+
+## Multi-Tenant Data Isolation
+
+```mermaid
+graph TB
+    subgraph Request
+        JWT[JWT Token<br/>centerId: 1]
+    end
+
+    subgraph Middleware
+        Scope[requireCenterScope<br/>Extract center_id from JWT]
+    end
+
+    subgraph Prisma["Scoped Prisma"]
+        Filter["Auto-inject<br/>WHERE center_id = 1"]
+    end
+
+    subgraph Database
+        C1[Center 1 Data]
+        C2[Center 2 Data]
+        C3[Center 3 Data]
+    end
+
+    JWT --> Scope
+    Scope --> Filter
+    Filter --> C1
+
+    style C1 fill:#d4edda,stroke:#28a745
+    style C2 fill:#f8f9fa,stroke:#dee2e6
+    style C3 fill:#f8f9fa,stroke:#dee2e6
+```
+
+Only Center 1 data is accessible. Centers 2 and 3 are invisible to the current request.
+
+---
+
+## LMS Attendance Proof Flow
+
+```mermaid
+sequenceDiagram
+    participant L as Learner
+    participant QR as QR Scanner
+    participant LMS as LMS Server
+    participant FDS as Fraud Detection
+    participant DPU as OPS DPU API
+
+    L->>QR: Scan QR code
+    QR->>LMS: POST /attendance/check-in<br/>{token, gps, fingerprint}
+
+    par Fraud Checks
+        LMS->>FDS: Rate limit check
+        LMS->>FDS: Device duplicate check
+        LMS->>FDS: GPS geofence check
+        LMS->>FDS: Time anomaly check
+    end
+
+    FDS-->>LMS: Fraud score: 0.1 (PASS)
+
+    LMS->>LMS: Create local SHA-256 chain hash
+    LMS->>DPU: POST /api/dpu/demo (non-blocking)
+    DPU-->>LMS: dpuId
+
+    LMS-->>L: Check-in confirmed ✓
+```
+
+---
+
+## White-Label Domain Flow
+
+```mermaid
+graph LR
+    subgraph Customer
+        Browser[brand.co.kr]
+    end
+
+    subgraph CloudFlare
+        Worker[CF Worker]
+    end
+
+    subgraph Cronozen
+        App[cronozen.com<br/>/brand-slug/*]
+    end
+
+    subgraph Transforms
+        GA[GA4 ID swap]
+        Meta[OG meta rewrite]
+        Canon[Canonical URL]
+        NoIndex[Remove noindex]
+    end
+
+    Browser --> Worker
+    Worker --> App
+    Worker --> Transforms
+
+    style Browser fill:#e3f2fd,stroke:#1976d2
+    style Worker fill:#fff3e0,stroke:#f57c00
+    style App fill:#e8f5e9,stroke:#388e3c
+```

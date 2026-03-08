@@ -1,0 +1,190 @@
+---
+title: "Build with Cronozen"
+description: "What you can build on the Cronozen platform"
+---
+
+# Build with Cronozen
+
+Cronozen is a vertical SaaS operating system. You don't build from scratch — you build **on top of** a platform that already handles multi-tenancy, authentication, billing, and audit trails.
+
+---
+
+## What You Get Out of the Box
+
+<CardGroup cols={3}>
+  <Card title="Multi-Tenant Isolation" icon="shield">
+    Row-level data isolation, scoped database queries, center-based access control — ready from day one.
+  </Card>
+  <Card title="SSO & Auth" icon="key">
+    Central authentication (auth.cronozen.com), JWT tokens, actor family linking, social login (Kakao, Apple, Google).
+  </Card>
+  <Card title="Decision Proof (DPU)" icon="link">
+    SHA-256 hash chains for tamper-evident audit trails. Every decision is provable.
+  </Card>
+  <Card title="White-Label" icon="palette">
+    Custom domains, branding, landing pages. Your customer sees their brand, not yours.
+  </Card>
+  <Card title="Billing" icon="credit-card">
+    Toss Payments integration, subscription management, plan-based feature gating.
+  </Card>
+  <Card title="AI Automation" icon="robot">
+    Workflow engine, pgvector embeddings, decision support with governance guardrails.
+  </Card>
+</CardGroup>
+
+---
+
+## Use Cases
+
+### Rehabilitation & Therapy Platform
+
+Build a center management system for rehabilitation facilities.
+
+```
+What you build:        Therapy scheduling, progress tracking, parent portal
+What Cronozen handles: Multi-center isolation, therapist-patient matching,
+                       DPU session proof, voucher billing, parent cross-center view
+```
+
+**Key APIs:** Centers, Schedules, DPU, Membership
+
+**White-label example:** `slowpace.co.kr` — a branded rehab center platform running on Cronozen infrastructure.
+
+---
+
+### Education & Training LMS
+
+Build HRD-Net compliant remote training or workshop management.
+
+```
+What you build:        Course content, assessment design, training programs
+What Cronozen handles: HRD-Net compliance (heartbeat, EMON, FDS), QR attendance,
+                       DPU proof, sequential learning gates, billing
+```
+
+**Key APIs:** LMS Learning, Assessment, Attendance, EMON
+
+**Compliance:** 27+ HRD-Net regulatory requirements built in. EMON electronic monitoring integration included.
+
+---
+
+### Welfare Center Management
+
+Build a welfare service management system for elderly care, disability support, or community services.
+
+```
+What you build:        Service programs, case management, reporting
+What Cronozen handles: Multi-project settlement, compliance monitoring,
+                       consent tracking, audit trails, schedule optimization
+```
+
+**Key APIs:** Centers, Schedules, DPU, Compliance
+
+---
+
+### Partner Platform (Franchise / White-Label)
+
+Build a franchise management platform where you onboard and manage multiple centers.
+
+```
+What you build:        Partner dashboard, center analytics, custom branding
+What Cronozen handles: Center provisioning, cross-center analytics,
+                       revenue share tracking, white-label DNS/proxy, SSO
+```
+
+**Key APIs:** Partner, Provisioning, White-Label Config
+
+---
+
+### AI Governance Platform
+
+Build compliance tooling for organizations using AI in regulated industries.
+
+```
+What you build:        Policy management, risk assessment UI, audit reports
+What Cronozen handles: DPU hash chains, 5-level governance guards, evidence lifecycle,
+                       JSON-LD export, chain verification, 6W responsibility extraction
+```
+
+**Key APIs:** DPU, Compliance, Audit
+
+---
+
+## Integration Patterns
+
+### Pattern 1: White-Label SaaS
+
+Deploy your own branded instance on a custom domain.
+
+```
+Your domain (brand.co.kr)
+    ↓ CloudFlare Worker
+Cronozen infrastructure
+    ↓ Multi-tenant isolation
+Your center's data only
+```
+
+**Setup time:** ~2 hours with the [White-Label Guide](/guides/white-label-setup)
+
+---
+
+### Pattern 2: Hub Integration
+
+Connect your existing app to Cronozen via SSO and API.
+
+```typescript
+// Your app authenticates via Cronozen SSO
+const sso = await fetch('https://cronozen.com/api/auth/sso/token', {
+  method: 'POST',
+  headers: { Authorization: `Bearer ${opsToken}` },
+  body: JSON.stringify({ targetApp: 'your-app' }),
+});
+
+// Your app calls Cronozen APIs for data
+const schedules = await fetch('https://cronozen.com/api/schedules', {
+  headers: { Authorization: `Bearer ${token}` },
+});
+```
+
+---
+
+### Pattern 3: DPU as a Service
+
+Use Cronozen's DPU engine as a standalone audit trail for your existing application.
+
+```python
+from cronozen import CronozenClient
+
+client = CronozenClient(token="your-token")
+
+# Record any decision from your app
+dpu = client.create_dpu(
+    content="Model v2.1 approved for production deployment",
+    reference_type="ml-model-approval",
+    reference_id="model_v2.1",
+    tags=["ai-governance", "production"]
+)
+
+# Later: prove the decision was made and unaltered
+verification = client.verify_dpu(dpu["id"])
+assert verification["valid"] == True
+```
+
+---
+
+## Getting Started
+
+<CardGroup cols={2}>
+  <Card title="Quickstart" icon="rocket" href="/getting-started/quickstart">
+    First API call in 5 minutes
+  </Card>
+  <Card title="cURL Examples" icon="terminal" href="/examples/curl-quickstart">
+    Copy-paste ready API examples
+  </Card>
+  <Card title="TypeScript SDK" icon="code" href="/examples/typescript-sdk">
+    Full client library with types
+  </Card>
+  <Card title="OpenAPI Spec" icon="file-code" href="/openapi.yaml">
+    Import into Postman, Insomnia, or AI tools
+  </Card>
+</CardGroup>

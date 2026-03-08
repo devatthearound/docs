@@ -1,0 +1,203 @@
+---
+title: "Python"
+description: "Integrate Cronozen API with Python"
+---
+
+# Python
+
+Integrate the Cronozen platform into your Python application.
+
+---
+
+## Setup
+
+```bash
+pip install requests
+```
+
+---
+
+## API Client
+
+```python
+# cronozen.py
+import requests
+from typing import Optional
+
+class CronozenClient:
+    def __init__(self, base_url: str = "https://cronozen.com/api", token: str = None):
+        self.base_url = base_url
+        self.session = requests.Session()
+        self.session.headers.update({"Content-Type": "application/json"})
+        if token:
+            self.set_token(token)
+
+    def set_token(self, token: str):
+        self.session.headers["Authorization"] = f"Bearer {token}"
+
+    def _get(self, path: str, **kwargs):
+        r = self.session.get(f"{self.base_url}{path}", **kwargs)
+        r.raise_for_status()
+        return r.json()
+
+    def _post(self, path: str, json=None, **kwargs):
+        r = self.session.post(f"{self.base_url}{path}", json=json, **kwargs)
+        r.raise_for_status()
+        return r.json()
+
+    # ── Auth ──────────────────────────────────
+    def login(self, email: str, password: str, center_domain: str = None) -> dict:
+        body = {"email": email, "password": password}
+        if center_domain:
+            body["centerDomain"] = center_domain
+        data = self._post("/auth/login", json=body)
+        if data["success"]:
+            self.set_token(data["data"]["accessToken"])
+        return data["data"]
+
+    def me(self) -> dict:
+        return self._get("/auth/me")["data"]
+
+    def switch_center(self, center_id: int) -> dict:
+        data = self._post("/auth/switch-center", json={"centerId": center_id})
+        if data["success"]:
+            self.set_token(data["data"]["accessToken"])
+        return data["data"]
+
+    # ── Centers ───────────────────────────────
+    def get_center(self, domain: str) -> dict:
+        return self._get(f"/centers/{domain}")["data"]
+
+    def center_info(self, domain: str) -> dict:
+        return self._get(f"/centers/{domain}/info")["data"]
+
+    def search_centers(self, query: str, vertical: str = None) -> list:
+        body = {"query": query}
+        if vertical:
+            body["vertical"] = vertical
+        return self._post("/centers/search", json=body)["data"]
+
+    # ── DPU ───────────────────────────────────
+    def create_dpu(self, content: str, reference_type: str,
+                   reference_id: str = None, tags: list = None) -> dict:
+        body = {"content": content, "referenceType": reference_type}
+        if reference_id:
+            body["referenceId"] = reference_id
+        if tags:
+            body["tags"] = tags
+        return self._post("/dpu/demo", json=body)["data"]
+
+    def get_dpu(self, dpu_id: str) -> dict:
+        return self._get(f"/dpu/{dpu_id}")["data"]
+
+    def verify_dpu(self, dpu_id: str) -> dict:
+        return self._get(f"/dpu/{dpu_id}/verify")["data"]
+
+    def export_dpu(self, dpu_id: str) -> dict:
+        return self._get(f"/dpu/{dpu_id}/export")["data"]
+
+    # ── Partner ───────────────────────────────
+    def partner_centers(self, page: int = 1) -> dict:
+        return self._get(f"/partner/centers?page={page}")
+
+    def partner_dashboard(self) -> dict:
+        return self._get("/partner/stats/dashboard")["data"]
+
+    def partner_create_center(self, name: str, vertical: str,
+                               admin_email: str, tenant_type: str = "CENTER") -> dict:
+        return self._post("/partner/centers", json={
+            "name": name,
+            "tenantType": tenant_type,
+            "vertical": vertical,
+            "adminEmail": admin_email,
+        })["data"]
+```
+
+---
+
+## Usage Examples
+
+### Basic Auth
+
+```python
+from cronozen import CronozenClient
+
+client = CronozenClient()
+auth = client.login("admin@center.com", "password")
+
+print(f"Logged in: {auth['actor']['name']} ({auth['actor']['role']})")
+print(f"Center: {auth['center']['name']}")
+
+me = client.me()
+print(f"Memberships: {len(me['memberships'])} centers")
+```
+
+### DPU: Record and Verify
+
+```python
+client = CronozenClient(token="your-jwt-token")
+
+# Record decision
+dpu = client.create_dpu(
+    content="Approved therapy plan for patient #1234",
+    reference_type="therapy-plan",
+    reference_id="plan_1234",
+    tags=["therapy", "approval"]
+)
+print(f"DPU: {dpu['id']} (chain #{dpu['chainIndex']})")
+
+# Verify integrity
+result = client.verify_dpu(dpu["id"])
+print(f"Chain valid: {result['valid']}")
+print(f"Chain length: {result['chainLength']}")
+
+# Export proof
+proof = client.export_dpu(dpu["id"])
+# JSON-LD v2 format
+```
+
+### Multi-Center Automation
+
+```python
+client = CronozenClient()
+client.login("admin@org.com", "password")
+
+me = client.me()
+for m in me["memberships"]:
+    if m["status"] != "ACTIVE":
+        continue
+
+    client.switch_center(m["centerId"])
+    center = client.get_center(m["centerDomain"])
+    print(f"{center['name']}: {center['memberCount']} members")
+```
+
+### Partner Operations
+
+```python
+client = CronozenClient(token="partner-token")
+
+# Dashboard
+stats = client.partner_dashboard()
+print(f"Centers: {stats['totalCenters']}, Active: {stats['activeToday']}")
+
+# Create center
+new = client.partner_create_center(
+    name="Gangnam Center",
+    vertical="rehabilitation",
+    admin_email="admin@gangnam.com"
+)
+print(f"Created: {new['name']}")
+```
+
+### Error Handling
+
+```python
+from requests.exceptions import HTTPError
+
+try:
+    client.login("wrong@email.com", "wrong")
+except HTTPError as e:
+    error = e.response.json().get("error", {})
+    print(f"Error [{error.get('code')}]: {error.get('message')}")
+```
