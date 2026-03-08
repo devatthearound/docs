@@ -1,59 +1,55 @@
-# Cronozen Platform
+# Cronozen
 
-> Cronozen is a multi-tenant SaaS platform for rehabilitation, welfare, education, pharmacy, commerce, mentoring, and interior verticals. It provides a unified operating system for center management with AI-powered automation.
+> Cronozen is a multi-tenant SaaS platform for rehabilitation, welfare, education, pharmacy, commerce, mentoring, and interior verticals. It provides AI-powered center management with cryptographic decision proof (DPU).
 
-## Platform Architecture
+## Links
 
-Cronozen operates as a hub-and-spoke ecosystem:
+- Documentation: https://docs.cronozen.com
+- Full AI context: https://docs.cronozen.com/llms-full.txt
+- Platform: https://cronozen.com
+- Blog: https://blog.cronozen.com
 
-- **OPS (cronozen.com)**: Hub — SSO, payments, tenant master, DPU, 7 verticals
-- **LMS (learn.cronozen.com)**: Spoke — learning engine, compliance, EMON
-- **CMS (blog.cronozen.com)**: Spoke — blog, manuals, content
-- **ERP (erp.cronozen.com)**: Spoke — business management (Odoo)
+## Architecture
 
-## Core Capabilities
+Hub-and-spoke ecosystem:
+- OPS (cronozen.com): Hub — SSO, payments, tenant master, DPU engine, 7 verticals
+- LMS (learn.cronozen.com): Spoke — HRD-Net compliant LMS, EMON, workshop attendance
+- CMS (blog.cronozen.com): Spoke — blog, manuals, content
+- ERP (erp.cronozen.com): Spoke — business management
 
-- Multi-tenant SaaS with center/workspace isolation
-- Actor-based authentication (ADMIN, INSTRUCTOR, PARENT, CHILD)
-- DPU (Decision Proof Unit): SHA-256 hash chain for audit-ready decision tracking
-- 5-level governance: policy existence → evidence level → human review → risk threshold → dual approval
-- 200+ database tables, 134+ APIs, 7 verticals
-- White-label support for partner organizations
+## Core Features
 
-## Authentication
+- Multi-tenant SaaS with row-level center/workspace isolation (200+ tables)
+- Actor-based auth: ADMIN, INSTRUCTOR, PARENT, CHILD (JWT + SSO via auth.cronozen.com)
+- DPU (Decision Proof Unit): SHA-256 hash chain, 5-level governance, JSON-LD v2 export
+- White-label: custom domain, branding, CloudFlare Worker proxy, partner platform
+- LMS: HRD-Net compliance, EMON integration, anti-fraud (FDS), QR attendance with DPU proof
+- AI automation: workflow engine, pgvector embeddings, decision provenance
 
-- JWT-based with multi-tenant context
-- SSO via auth.cronozen.com
-- Actor family: related actors linked by email/phone
-- Membership lifecycle: INVITED → PENDING → ACTIVE → SUSPENDED → REJECTED → ENDED
-- Tenant types: CENTER, WORKSPACE, PROGRAM, WHITE_LABEL
+## Documentation Pages
 
-## Key APIs
+- [Introduction](https://docs.cronozen.com/introduction): Platform overview and getting started
+- [Quickstart](https://docs.cronozen.com/getting-started/quickstart): First API call in 5 minutes
+- [Core Concepts](https://docs.cronozen.com/getting-started/concepts): Actors, tenants, membership, DPU
+- [Architecture Overview](https://docs.cronozen.com/architecture/overview): System design, tech stack, deployment
+- [Multi-Tenant](https://docs.cronozen.com/architecture/multi-tenant): Row-level isolation, scoped Prisma
+- [DPU Engine](https://docs.cronozen.com/architecture/dpu): 3-layer architecture, 5 governance guards
+- [Proof Pipeline](https://docs.cronozen.com/architecture/proof-pipeline): 5-stage evidence pipeline
+- [Auth Overview](https://docs.cronozen.com/auth/overview): JWT, tenant resolution, actor family
+- [JWT Tokens](https://docs.cronozen.com/auth/jwt): Token lifecycle, session management
+- [Multi-Tenant Auth](https://docs.cronozen.com/auth/multi-tenant-auth): Domain routing, white-label auth
+- [Tenant Overview](https://docs.cronozen.com/tenant/overview): Tenant types, provisioning, partner platform
+- [Workspaces](https://docs.cronozen.com/tenant/workspace): Personal workspace isolation patterns
+- [Membership](https://docs.cronozen.com/tenant/membership): Lifecycle (INVITED→ACTIVE→ENDED), security
+- [AI Agents](https://docs.cronozen.com/agents/overview): Capabilities, governance flow
+- [Workflows](https://docs.cronozen.com/agents/workflow): Automation engine, vertical-specific workflows
+- [White-Label Setup](https://docs.cronozen.com/guides/white-label-setup): End-to-end custom domain deployment
+- [LMS Platform](https://docs.cronozen.com/guides/lms-integration): HRD-Net compliance, EMON, QR attendance
+- [API Overview](https://docs.cronozen.com/api-reference/overview): Base URLs, auth, rate limiting
+- [Auth API](https://docs.cronozen.com/api-reference/authentication): Login, /me, switch-center
+- [Tenant API](https://docs.cronozen.com/api-reference/tenants): Centers, partner management
+- [Workflow API](https://docs.cronozen.com/api-reference/workflows): Workflow execution, DPU integration
 
-- `/api/auth/*` — Authentication and session management
-- `/api/centers/*` — Center (tenant) management
-- `/api/workspace/*` — Personal workspace operations
-- `/api/partner/*` — Partner platform APIs
-- `/api/schedules/*` — Unified scheduling
-- `/api/workflows/*` — AI automation workflows
+## Tech Stack
 
-## Data Architecture
-
-- PostgreSQL with pgvector for AI embeddings
-- Redis for caching and session
-- Prisma ORM with scoped models for tenant isolation
-- Append-only audit log with 12 event types
-
-## AI & Automation
-
-- DPU hash chain for decision provenance
-- JSON-LD v2 export (schema.cronozen.com/decision-proof/v2)
-- Evidence levels: DRAFT(0) → DOCUMENTED(1) → AUDIT_READY(2)
-- Workflow automation engine
-
-## Documentation
-
-- Developer docs: docs.cronozen.com
-- Blog & strategy: blog.cronozen.com
-- Operations manuals: blog.cronozen.com/manuals
-- API reference: docs.cronozen.com/api-reference
+Next.js 16, TypeScript, Prisma 6.18, PostgreSQL (pgvector), Redis, AWS ECS Fargate, CloudFlare, GitHub Actions CI/CD

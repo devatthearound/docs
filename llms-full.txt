@@ -1,0 +1,301 @@
+# Cronozen Platform — Full Reference
+
+> Cronozen is a multi-tenant SaaS operating system serving 7 verticals: rehabilitation, welfare, education, pharmacy, commerce, mentoring, and interior design. This document provides comprehensive technical context for AI systems.
+
+---
+
+## 1. PLATFORM ARCHITECTURE
+
+### Hub-and-Spoke Model
+- OPS (cronozen.com): Central hub — SSO (auth.cronozen.com), payments (Toss), tenant master, DPU engine, 7 vertical modules
+- LMS (learn.cronozen.com): Learning spoke — HRD-Net compliant remote training, EMON electronic monitoring, workshop attendance
+- CMS (blog.cronozen.com): Content spoke — blog, user manuals, SEO content
+- ERP (erp.cronozen.com): Business spoke — Odoo-based accounting, invoicing
+
+### Tech Stack
+- Framework: Next.js 16 + TypeScript
+- ORM: Prisma 6.18 with scoped models for tenant isolation
+- Database: PostgreSQL with pgvector (AI embeddings)
+- Cache: Redis (sessions, heartbeat, draft answers)
+- Infrastructure: AWS ECS Fargate (ap-northeast-2), ECR, S3
+- Edge: CloudFlare (DNS, Workers, WAF, Zero Trust)
+- CI/CD: GitHub Actions (develop → staging, main → production)
+
+### Scale
+- 200+ database tables
+- 134+ API endpoints
+- 7 business verticals
+- Multi-region deployment (Korea: ap-northeast-2)
+
+---
+
+## 2. MULTI-TENANT ARCHITECTURE
+
+### Tenant Types
+- CENTER: Physical facility (rehab center, welfare center, school)
+- WORKSPACE: Personal actor workspace (family context, cross-center view)
+- PROGRAM: Specific program instance
+- WHITE_LABEL: Partner-branded instance with custom domain
+
+### Data Isolation
+- Row-level isolation via center_id on all tables
+- Scoped Prisma: automatically filters by center_id (used for all center-specific queries)
+- Base Prisma: cross-center queries (admin, actor family, reporting)
+- requireCenterScope() / getCenterScopeOrError(): enforcement helpers
+- No center_id fallback — all access requires explicit membership
+
+### Actor-Workspace Separation
+- Instructor: workspace and center data fully isolated, center accessed via separate entry → center.id only
+- Parent: workspace shows all enrolled centers, cross-center schedule/activity aggregation
+
+---
+
+## 3. AUTHENTICATION & AUTHORIZATION
+
+### SSO Flow
+1. User visits app → redirected to auth.cronozen.com
+2. Central Auth validates credentials → issues JWT
+3. JWT contains: actorId, email, centerId, centerDomain, role, authorizedDomains
+4. Redirect back to origin app with JWT
+
+### Tenant Resolution Priority (resolveDefaultTenant)
+1. ADMIN role → admin dashboard
+2. URL-specified tenant
+3. Last visited tenant (cookie)
+4. Single membership → auto-select
+5. Email domain match
+6. Tenant picker (multiple memberships)
+7. Pending membership → waiting page
+8. No membership → onboarding
+
+### Membership Lifecycle
+INVITED → PENDING → ACTIVE → SUSPENDED → REJECTED → ENDED
+- All center access requires active membership
+- No backdoor access, no direct center_id queries
+- Membership transitions are audited
+
+### Actor Family
+- findActorFamilyIds(): links related actors by email/phone
+- Used in: switch-center, /api/auth/me, buildAuthSession
+- Ensures "center entry permission scope" = "permission calculation scope"
+
+### JWT Structure
+- buildAuthSession(): server-side JWT builder
+- buildAuthDomainInfo(): authorized domains + domain roles
+- Actor roles: ADMIN, INSTRUCTOR, PARENT, CHILD
+
+---
+
+## 4. DPU (DECISION PROOF UNIT)
+
+### Purpose
+Tamper-evident, audit-ready decision tracking using cryptographic hash chains.
+
+### 3-Layer Architecture
+- dpu-core: Domain-independent, zero DB dependency. SHA-256 hash computation.
+- dpu-pro: Governance layer — 5 guards, policy matching, compliance logging
+- dpu-connector-prisma: Database adapter for Prisma ORM
+
+### Hash Chain
+- Algorithm: SHA-256
+- Computation: computeChainHash(content, previousHash, timestamp)
+- Genesis block: first in chain (no previous hash)
+- Continuous chain: each DPU links to previous via hash
+- Tampering any record breaks all downstream hashes
+
+### 5 Governance Guards
+1. Policy Existence: required policy must exist
+2. Evidence Level: minimum evidence threshold met
+3. Human Review: human approval required for high-impact decisions
+4. Risk Threshold: risk score within acceptable bounds
+5. Dual Approval: two independent approvers for critical decisions
+
+### Evidence Levels
+- DRAFT (0): AI-generated, unreviewed
+- DOCUMENTED (1): Human-reviewed, supporting evidence attached
+- AUDIT_READY (2): Locked, chain sealed, ready for external audit
+- LOCKED status: modifications break the chain
+
+### Export Format
+- JSON-LD v2: schema.cronozen.com/decision-proof/v2
+- 12 audit event types (append-only SQL protection)
+
+### Proof Pipeline (5 Stages)
+1. Evidence Collection: 6W extraction (Who, What, When, Where, Why, How)
+2. Policy Matching: scope hierarchy (Global → Country → Region → Center)
+3. Guard Validation: sequential 5-guard evaluation
+4. Hash Chain Sealing: SHA-256 linking to previous proof
+5. Audit-Ready Output: JSON-LD export with complete provenance
+
+---
+
+## 5. WHITE-LABEL SYSTEM
+
+### Architecture
+Custom domains are reverse proxied via CloudFlare Workers to cronozen.com.
+- Worker handles: domain rewrite, SEO meta substitution, GA4 ID replacement, CSP rewrite
+- Opt-in rewrite policy: only CUSTOM_DOMAIN_REWRITE_SEGMENTS pages are proxied (safe-by-default)
+
+### Setup Requirements (3 config files)
+1. config/domains.config.ts — domain → center mapping, theme
+2. src/lib/proxy/constants.ts — customDomains, CUSTOM_DOMAIN_AUTH_CLIENTS, rewrite segments
+3. config/auth-clients.config.ts — redirect URI registration
+
+### Database Schema
+- whitelabel_agreements: partner contract, branding, features, SEO, landing page config
+- center_tenant_mapping: cross-service linking (OPS center → CMS tenant, LMS tenant)
+- partner_memberships: PARTNER_ADMIN, PARTNER_OPERATOR roles
+
+### SEO Strategy
+- Platform SEO: cronozen.com (indexed)
+- Brand SEO: brand.co.kr (indexed, Worker removes noindex)
+- Internal paths: cronozen.com/brand-slug (noindex, prevents duplicate content)
+
+### Partner API
+- POST /api/admin/partners/onboard — create partner + center + admin (single transaction)
+- GET/POST /api/partner/centers — list/create centers
+- GET /api/partner/stats/dashboard — aggregated statistics
+- GET /api/partner/audit — audit logs
+- GET /api/partner/members — member list
+- GET /api/whitelabel/{domain}/config — runtime branding/feature config
+
+---
+
+## 6. LMS PLATFORM
+
+### Product Types
+- COURSE: HRD-Net remote training (government-subsidized)
+- WORKSHOP: Offline group training with QR attendance
+- COACHING: 1:1 mentoring sessions
+- WEBINAR: Live online (Zoom integration)
+- PACKAGE: Bundled courses
+
+### HRD-Net Compliance
+Korean government regulation for subsidized remote training:
+- 10-second heartbeat activity tracking
+- Daily limit: 8 hours / 8 lessons
+- Completion: 80% progress + 60-point passing score
+- Sequential learning enforcement
+- 3 assessment types: progress check (20-30%), final exam (50-60%), assignment (10-20%)
+- Question bank: 3x pool with Fisher-Yates random draw
+- Phone OTP identity verification (본인인증)
+
+### EMON (Electronic Monitoring)
+Government real-time monitoring system:
+- 6 data tables: user, login, course, class, attendance, score history
+- 3 API endpoints: progress, assessment result, completion
+- Queue-based transmission with exponential backoff retry
+- Per-tenant configuration (API URL, key, institution ID)
+
+### Anti-Fraud System (FDS)
+- C1: Math CAPTCHA (2-hour Redis pass)
+- C2: Concurrent session prevention (Redis lock)
+- C3: Single learning window (BroadcastChannel)
+- C4: 2-hour inactivity auto-logout
+- C5: Copy/paste prevention (exam mode)
+- C7: Plagiarism detection (Jaccard + 3-gram cosine, 80% threshold)
+- C8: 80% progress gate for final exam
+- C10: 50% minimum study time per lesson
+- C11: IP-based behavioral analysis
+
+### DPU Attendance Proof
+Workshop check-ins are sealed with SHA-256 hash chains:
+- QR token generation (5-15 min TTL)
+- GPS capture (latitude, longitude, accuracy)
+- Device fingerprint hash
+- Fraud scoring: 0.0-1.0 (PASS < 0.3, FLAG 0.3-0.7, BLOCK > 0.7)
+- Local LMS chain hash + OPS DPU API (non-blocking)
+
+### Multi-Tenant
+- 77 database models, 21 with tenantId field
+- Tenant subdomains: {slug}.learn.cronozen.com
+- Per-tenant settings: HRD config, EMON config, branding
+- OPS integration: centerId mapping, SSO JWT, DPU proof
+
+### Key APIs
+- POST /api/v3/learning/heartbeat — activity tracking
+- GET /api/v3/learning/hrd-status — learner progress
+- POST /api/v3/learning/hrd-assessment — submit exam
+- GET /api/v3/learning/hrd-completion — completion check
+- GET/POST /api/v2/admin/products — course management
+- GET/PUT /api/v2/admin/emon-settings — EMON configuration
+- POST /api/admin/attendance/sessions — create workshop
+- POST /api/admin/attendance/{sessionId}/qr — generate QR
+- POST /api/payments/confirm — Toss payment confirmation
+
+---
+
+## 7. RESOLVER ARCHITECTURE
+
+6 resolvers determine UI behavior based on actor state:
+1. ActorLifecycle: actor existence and status
+2. OnboardingStep: registration progress
+3. SidebarContext: menu items based on role + domain prefix
+4. VerticalPath: vertical-specific routing
+5. UIFeatures: feature flags per actor context
+6. UIContext: final UI state composition
+
+Core principle: UI = domain prefix + membership role (NOT center.type)
+
+---
+
+## 8. API STRUCTURE
+
+### Base URLs
+- Production: https://cronozen.com/api
+- LMS: https://learn.cronozen.com/api
+- Auth: https://auth.cronozen.com/api
+
+### Authentication
+- Bearer token (JWT) in Authorization header
+- Cookie-based session (auth_token)
+- Tenant context from JWT centerId/centerDomain
+
+### Rate Limiting
+- Standard: 100 requests/minute
+- Partner: 500 requests/minute
+
+### Response Format
+```json
+{
+  "success": true,
+  "data": { ... },
+  "meta": { "page": 1, "total": 100 }
+}
+```
+
+### Error Format
+```json
+{
+  "success": false,
+  "error": {
+    "code": "UNAUTHORIZED",
+    "message": "Invalid or expired token"
+  }
+}
+```
+
+---
+
+## 9. DEPLOYMENT
+
+### Branching Strategy
+- develop → staging (auto-deploy)
+- main → production (auto-deploy)
+
+### Environments
+| Service | Staging | Production |
+|---------|---------|------------|
+| OPS | stg.cronozen.com | cronozen.com |
+| CMS | stg-blog.cronozen.com | blog.cronozen.com |
+| LMS | stg-learn.cronozen.com | learn.cronozen.com |
+| Docs | docs.cronozen.com | docs.cronozen.com |
+
+### Infrastructure
+- Compute: AWS ECS Fargate (ap-northeast-2)
+- Database: AWS RDS PostgreSQL (VPC internal)
+- Cache: ElastiCache Redis
+- Storage: S3 + CloudFront CDN
+- Edge: CloudFlare (DNS, Workers, WAF)
+- CI/CD: GitHub Actions
+- DB Migration: Lambda function (VPC internal access)
