@@ -1,0 +1,85 @@
+---
+title: "DPU (Decision Proof Unit)"
+description: "Tamper-evident decision tracking with SHA-256 hash chains"
+---
+
+# DPU — Decision Proof Unit
+
+The DPU system provides **cryptographic proof** that decisions were made following proper governance procedures.
+
+## How It Works
+
+Each decision record forms a link in a SHA-256 hash chain:
+
+```
+Genesis Block
+  ↓ hash
+Decision #1 (content + previousHash + timestamp)
+  ↓ hash
+Decision #2 (content + previousHash + timestamp)
+  ↓ hash
+Decision #3 ...
+```
+
+### Hash Computation
+
+```typescript
+function computeChainHash(
+  content: string,
+  previousHash: string,
+  timestamp: Date
+): string {
+  return sha256(`${content}|${previousHash}|${timestamp.toISOString()}`);
+}
+```
+
+## Evidence Levels
+
+| Level | Name | Value | Mutability |
+|-------|------|-------|-----------|
+| 0 | `DRAFT` | Draft state | Editable |
+| 1 | `DOCUMENTED` | Formally documented | Editable with audit trail |
+| 2 | `AUDIT_READY` | Locked for audit | **Immutable** — modification breaks chain |
+
+<Warning>
+  Once a record reaches `AUDIT_READY`, any modification will break the hash chain. This is by design — it provides tamper evidence.
+</Warning>
+
+## 5-Level Governance
+
+Every decision goes through up to 5 governance checks:
+
+1. **Policy Existence** — Is there a policy governing this decision?
+2. **Evidence Level** — Is the evidence sufficient for the decision type?
+3. **Human Review** — Has a qualified human reviewed the decision?
+4. **Risk Threshold** — Does the risk level require escalation?
+5. **Dual Approval** — Do high-risk decisions have two independent approvers?
+
+## Packages
+
+| Package | Purpose |
+|---------|---------|
+| `@cronozen/dpu-core` | Domain-independent, zero DB dependency |
+| `@cronozen/dpu-pro` | Governance layer with full audit support |
+
+## Export Format
+
+DPU records export as **JSON-LD v2**:
+
+```json
+{
+  "@context": "https://schema.cronozen.com/decision-proof/v2",
+  "@type": "DecisionProof",
+  "content": "...",
+  "evidenceLevel": "AUDIT_READY",
+  "chainHash": "sha256:abc123...",
+  "previousHash": "sha256:def456...",
+  "timestamp": "2026-03-08T09:00:00Z"
+}
+```
+
+## Audit System
+
+- Append-only SQL protection
+- 12 event types tracked
+- All `basePrisma` cross-center operations are audited

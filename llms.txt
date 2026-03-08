@@ -1,0 +1,59 @@
+# Cronozen Platform
+
+> Cronozen is a multi-tenant SaaS platform for rehabilitation, welfare, education, pharmacy, commerce, mentoring, and interior verticals. It provides a unified operating system for center management with AI-powered automation.
+
+## Platform Architecture
+
+Cronozen operates as a hub-and-spoke ecosystem:
+
+- **OPS (cronozen.com)**: Hub — SSO, payments, tenant master, DPU, 7 verticals
+- **LMS (learn.cronozen.com)**: Spoke — learning engine, compliance, EMON
+- **CMS (blog.cronozen.com)**: Spoke — blog, manuals, content
+- **ERP (erp.cronozen.com)**: Spoke — business management (Odoo)
+
+## Core Capabilities
+
+- Multi-tenant SaaS with center/workspace isolation
+- Actor-based authentication (ADMIN, INSTRUCTOR, PARENT, CHILD)
+- DPU (Decision Proof Unit): SHA-256 hash chain for audit-ready decision tracking
+- 5-level governance: policy existence → evidence level → human review → risk threshold → dual approval
+- 200+ database tables, 134+ APIs, 7 verticals
+- White-label support for partner organizations
+
+## Authentication
+
+- JWT-based with multi-tenant context
+- SSO via auth.cronozen.com
+- Actor family: related actors linked by email/phone
+- Membership lifecycle: INVITED → PENDING → ACTIVE → SUSPENDED → REJECTED → ENDED
+- Tenant types: CENTER, WORKSPACE, PROGRAM, WHITE_LABEL
+
+## Key APIs
+
+- `/api/auth/*` — Authentication and session management
+- `/api/centers/*` — Center (tenant) management
+- `/api/workspace/*` — Personal workspace operations
+- `/api/partner/*` — Partner platform APIs
+- `/api/schedules/*` — Unified scheduling
+- `/api/workflows/*` — AI automation workflows
+
+## Data Architecture
+
+- PostgreSQL with pgvector for AI embeddings
+- Redis for caching and session
+- Prisma ORM with scoped models for tenant isolation
+- Append-only audit log with 12 event types
+
+## AI & Automation
+
+- DPU hash chain for decision provenance
+- JSON-LD v2 export (schema.cronozen.com/decision-proof/v2)
+- Evidence levels: DRAFT(0) → DOCUMENTED(1) → AUDIT_READY(2)
+- Workflow automation engine
+
+## Documentation
+
+- Developer docs: docs.cronozen.com
+- Blog & strategy: blog.cronozen.com
+- Operations manuals: blog.cronozen.com/manuals
+- API reference: docs.cronozen.com/api-reference

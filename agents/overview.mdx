@@ -1,0 +1,58 @@
+---
+title: "AI Agents"
+description: "Cronozen AI automation and agent capabilities"
+---
+
+# AI Agents
+
+## Overview
+
+Cronozen integrates AI capabilities for automation, decision support, and workflow optimization across all verticals.
+
+## Capabilities
+
+| Feature | Description |
+|---------|------------|
+| **Workflow Automation** | AI-driven scheduling, reporting, and operations |
+| **DPU Integration** | AI decisions tracked in hash chain for auditability |
+| **Vector Search** | pgvector-powered semantic search across documents |
+| **Decision Support** | AI recommendations with governance compliance |
+
+## AI-Ready Infrastructure
+
+### pgvector
+
+PostgreSQL with pgvector extension enables semantic search:
+
+```sql
+-- Find similar documents
+SELECT * FROM documents
+ORDER BY embedding <=> $1
+LIMIT 10;
+```
+
+### llms.txt
+
+Cronozen provides a machine-readable platform description at:
+
+```
+https://docs.cronozen.com/llms.txt
+```
+
+This enables AI tools (ChatGPT, Claude, Cursor) to understand the platform structure and generate compatible code.
+
+## Governance
+
+All AI-generated decisions flow through the DPU governance pipeline:
+
+```
+AI Recommendation
+  → DPU Record (DRAFT)
+    → Human Review
+      → Evidence Level Upgrade (DOCUMENTED)
+        → Approval (AUDIT_READY)
+```
+
+<Info>
+  AI never makes final decisions autonomously. The 5-level governance ensures human oversight at appropriate checkpoints.
+</Info>

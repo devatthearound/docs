@@ -1,0 +1,70 @@
+---
+title: "Auth Overview"
+description: "Cronozen authentication and authorization system"
+---
+
+# Authentication System
+
+## Overview
+
+Cronozen uses **JWT-based authentication** with multi-tenant context. All services authenticate through a single SSO endpoint.
+
+## Auth Flow
+
+```
+Login Request
+  → Validate credentials
+    → Resolve default tenant (resolveDefaultTenant)
+      → Build auth domain info (buildAuthDomainInfo)
+        → Issue JWT with tenant context
+```
+
+## Key Components
+
+| Component | File | Purpose |
+|-----------|------|---------|
+| `resolveDefaultTenant()` | `src/lib/auth/resolve-default-tenant.ts` | Default entry policy SSOT |
+| `buildAuthDomainInfo()` | `src/lib/auth/build-auth-domain-info.ts` | JWT authorizedDomains/domainRoles |
+| `findActorFamilyIds()` | `src/lib/auth/actor-family.ts` | Cross-actor family linking |
+| `requireCenterScope()` | `src/core/tenant/center-scope.ts` | Data isolation enforcement |
+
+## Tenant Resolution Priority
+
+When a user logs in, the system determines their default tenant in this order:
+
+1. **ADMIN** — Admin always goes to admin context
+2. **URL tenant** — If accessing via specific tenant URL
+3. **Last tenant** — User's most recent tenant
+4. **Single** — If user has only one membership
+5. **Email match** — Match by email domain
+6. **Picker** — Show tenant picker
+7. **Pending** — Pending membership flow
+8. **Onboarding** — New user onboarding
+
+## JWT Structure
+
+```json
+{
+  "actorId": "actor_123",
+  "centerId": "center_456",
+  "role": "ADMIN",
+  "authorizedDomains": ["slowpace.co.kr", "center.cronozen.com"],
+  "domainRoles": {
+    "slowpace.co.kr": "ADMIN"
+  },
+  "exp": 1234567890
+}
+```
+
+## Actor Family
+
+Actors with the same email or phone are automatically linked as a **family**. This enables:
+
+- Center switching without re-login
+- Cross-center visibility for parents
+- Unified session across services
+
+```typescript
+const familyIds = await findActorFamilyIds(actorId);
+// Returns all actor IDs sharing the same email/phone
+```

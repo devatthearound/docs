@@ -1,0 +1,78 @@
+---
+title: "API Overview"
+description: "Cronozen API reference — 134+ endpoints across 7 verticals"
+---
+
+# API Reference
+
+## Base URL
+
+```
+Production: https://cronozen.com/api
+Staging:    https://stg.cronozen.com/api
+```
+
+## Authentication
+
+All API calls require a JWT token in the `Authorization` header:
+
+```bash
+Authorization: Bearer <jwt-token>
+```
+
+See [Authentication](/auth/overview) for details on obtaining tokens.
+
+## API Groups
+
+| Group | Prefix | Description |
+|-------|--------|------------|
+| Auth | `/api/auth/*` | Login, session, token management |
+| Centers | `/api/centers/*` | Center CRUD and management |
+| Workspace | `/api/workspace/*` | Personal workspace operations |
+| Schedules | `/api/schedules/*` | Unified scheduling across verticals |
+| Partner | `/api/partner/*` | Partner platform management |
+| Workflows | `/api/workflows/*` | AI automation workflows |
+| Cron | `/api/cron/*` | Internal scheduled tasks |
+
+## Response Format
+
+All responses follow a consistent format:
+
+```json
+{
+  "success": true,
+  "data": { ... },
+  "error": null
+}
+```
+
+Error responses:
+
+```json
+{
+  "success": false,
+  "data": null,
+  "error": {
+    "code": "UNAUTHORIZED",
+    "message": "Invalid or expired token"
+  }
+}
+```
+
+## Rate Limiting
+
+API calls are rate-limited per actor:
+
+| Tier | Limit |
+|------|-------|
+| Standard | 100 req/min |
+| Partner | 500 req/min |
+| Internal | Unlimited |
+
+## Tenant Scoping
+
+All API responses are automatically scoped to the authenticated actor's current center. Cross-center queries are only available through specific endpoints with proper authorization.
+
+<Warning>
+  Never pass `center_id` as a query parameter for data access. The center context is derived from the JWT token.
+</Warning>

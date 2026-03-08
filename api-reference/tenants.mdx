@@ -1,0 +1,89 @@
+---
+title: "Tenant API"
+description: "Center and tenant management endpoints"
+---
+
+# Tenant API
+
+## Centers
+
+### GET /api/centers
+
+List centers the authenticated actor has access to.
+
+**Response:**
+
+```json
+{
+  "success": true,
+  "data": [
+    {
+      "id": "center_456",
+      "name": "서초센터",
+      "tenantType": "CENTER",
+      "status": "ACTIVE"
+    }
+  ]
+}
+```
+
+---
+
+### GET /api/centers/:centerId
+
+Get center details (requires active membership).
+
+**Response:**
+
+```json
+{
+  "success": true,
+  "data": {
+    "id": "center_456",
+    "name": "서초센터",
+    "tenantType": "CENTER",
+    "status": "ACTIVE",
+    "settings": { ... },
+    "memberCount": 45
+  }
+}
+```
+
+## Partner Center Management
+
+### GET /api/partner/centers
+
+List all centers managed by the partner organization.
+
+### POST /api/partner/centers
+
+Create a new center under the partner.
+
+**Request:**
+
+```json
+{
+  "name": "새 센터",
+  "tenantType": "CENTER",
+  "vertical": "rehabilitation",
+  "adminEmail": "admin@newcenter.com"
+}
+```
+
+### GET /api/partner/stats/dashboard
+
+Get aggregated statistics across all partner centers.
+
+**Response:**
+
+```json
+{
+  "success": true,
+  "data": {
+    "totalCenters": 12,
+    "totalMembers": 540,
+    "activeToday": 230,
+    "revenue": { ... }
+  }
+}
+```

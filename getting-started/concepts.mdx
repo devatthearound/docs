@@ -1,0 +1,82 @@
+---
+title: "Core Concepts"
+description: "Key abstractions in the Cronozen platform"
+---
+
+# Core Concepts
+
+## Actors
+
+An **Actor** is an authenticated identity in Cronozen. Each actor has a role that determines their permissions and UI experience.
+
+| Role | Description |
+|------|-------------|
+| `ADMIN` | Center administrator with full management access |
+| `INSTRUCTOR` | Service provider (therapist, teacher, pharmacist) |
+| `PARENT` | Guardian or caregiver |
+| `CHILD` | Service recipient |
+
+<Info>
+  Actors are linked by email/phone through the **Actor Family** system, enabling cross-center visibility for parents.
+</Info>
+
+## Tenants
+
+A **Tenant** is an isolated organizational unit. Cronozen supports 4 tenant types:
+
+- **CENTER** — A physical or virtual center (default)
+- **WORKSPACE** — Personal actor workspace
+- **PROGRAM** — A specific program within a center
+- **WHITE_LABEL** — Partner-branded instance
+
+## Membership Lifecycle
+
+Every actor-to-center relationship goes through a lifecycle:
+
+```
+INVITED → PENDING → ACTIVE → SUSPENDED → REJECTED → ENDED
+```
+
+Access is **only** granted through active memberships. There is no backdoor access.
+
+## DPU (Decision Proof Unit)
+
+The DPU system provides **tamper-evident decision tracking** using SHA-256 hash chains:
+
+1. Every decision is recorded with content, timestamp, and actor
+2. Each record links to the previous via hash chain
+3. Evidence levels: `DRAFT(0)` → `DOCUMENTED(1)` → `AUDIT_READY(2)`
+4. Once `AUDIT_READY`, the record is **locked** — any modification breaks the chain
+
+### 5-Level Governance
+
+```
+Policy Existence → Evidence Level → Human Review → Risk Threshold → Dual Approval
+```
+
+## Scoped Data Access
+
+All database queries are scoped to the current center via Prisma middleware:
+
+```typescript
+// Scoped — only current center's data
+const schedules = await scopedPrisma.schedule.findMany();
+
+// Base — cross-center (restricted, audited)
+const allCenters = await basePrisma.center.findMany();
+```
+
+## Resolvers
+
+The UI is determined by a **6-resolver chain**, not by center type:
+
+```
+ActorLifecycle → OnboardingStep → SidebarContext
+                                → VerticalPath
+                                → UIFeatures
+                                → UIContext
+```
+
+<Warning>
+  UI decisions use **domain prefix + membership role**, never `center.type`. This is a core architectural principle.
+</Warning>

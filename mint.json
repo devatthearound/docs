@@ -1,0 +1,104 @@
+{
+  "$schema": "https://mintlify.com/schema.json",
+  "name": "Cronozen Docs",
+  "logo": {
+    "dark": "/images/logo-dark.svg",
+    "light": "/images/logo-light.svg"
+  },
+  "favicon": "/images/favicon.svg",
+  "colors": {
+    "primary": "#D97B57",
+    "light": "#E8A882",
+    "dark": "#C06A48",
+    "anchors": {
+      "from": "#D97B57",
+      "to": "#C06A48"
+    }
+  },
+  "topbarLinks": [
+    {
+      "name": "Blog",
+      "url": "https://blog.cronozen.com"
+    },
+    {
+      "name": "Platform",
+      "url": "https://cronozen.com"
+    }
+  ],
+  "topbarCtaButton": {
+    "name": "Get Started",
+    "url": "https://cronozen.com/auth"
+  },
+  "tabs": [
+    {
+      "name": "API Reference",
+      "url": "api-reference"
+    }
+  ],
+  "anchors": [
+    {
+      "name": "GitHub",
+      "icon": "github",
+      "url": "https://github.com/cronozen"
+    },
+    {
+      "name": "Blog",
+      "icon": "newspaper",
+      "url": "https://blog.cronozen.com"
+    }
+  ],
+  "navigation": [
+    {
+      "group": "Getting Started",
+      "pages": [
+        "getting-started/introduction",
+        "getting-started/quickstart",
+        "getting-started/concepts"
+      ]
+    },
+    {
+      "group": "Architecture",
+      "pages": [
+        "architecture/overview",
+        "architecture/multi-tenant",
+        "architecture/dpu"
+      ]
+    },
+    {
+      "group": "Authentication",
+      "pages": [
+        "auth/overview",
+        "auth/jwt",
+        "auth/multi-tenant-auth"
+      ]
+    },
+    {
+      "group": "Tenant System",
+      "pages": [
+        "tenant/overview",
+        "tenant/workspace",
+        "tenant/membership"
+      ]
+    },
+    {
+      "group": "AI Agents",
+      "pages": [
+        "agents/overview",
+        "agents/workflow"
+      ]
+    },
+    {
+      "group": "API Reference",
+      "pages": [
+        "api-reference/overview",
+        "api-reference/authentication",
+        "api-reference/tenants",
+        "api-reference/workflows"
+      ]
+    }
+  ],
+  "footerSocials": {
+    "website": "https://cronozen.com",
+    "github": "https://github.com/cronozen"
+  }
+}

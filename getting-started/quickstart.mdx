@@ -1,0 +1,69 @@
+---
+title: "Quickstart"
+description: "Start using the Cronozen platform"
+---
+
+# Quickstart
+
+## 1. Authentication
+
+All Cronozen services authenticate through a single SSO endpoint.
+
+```bash
+POST https://cronozen.com/api/auth/login
+Content-Type: application/json
+
+{
+  "email": "user@example.com",
+  "password": "your-password"
+}
+```
+
+**Response:**
+
+```json
+{
+  "token": "eyJhbGciOiJIUzI1NiIs...",
+  "actor": {
+    "id": "actor_123",
+    "role": "ADMIN",
+    "centerId": "center_456"
+  }
+}
+```
+
+## 2. Access a Tenant
+
+Use the JWT token to access tenant-scoped resources:
+
+```bash
+GET https://cronozen.com/api/centers/center_456
+Authorization: Bearer eyJhbGciOiJIUzI1NiIs...
+```
+
+## 3. Multi-Tenant Context
+
+Every API call is scoped to the authenticated actor's center. Data isolation is enforced at the database level through scoped Prisma models.
+
+```
+Actor → Center Membership → Scoped Data Access
+```
+
+<Warning>
+  Cross-center data access requires explicit `basePrisma` usage and is restricted to authorized operations only.
+</Warning>
+
+## 4. Workspace vs Center
+
+| Concept | Description |
+|---------|-------------|
+| **Center** | A tenant organization (rehab center, pharmacy, etc.) |
+| **Workspace** | A personal space for individual actors |
+
+Instructors have **isolated** workspace and center data. Parents can view data **across** their children's centers.
+
+## Next Steps
+
+- [Core Concepts](/getting-started/concepts) — Understand actors, tenants, and DPU
+- [Auth System](/auth/overview) — Deep dive into authentication
+- [API Reference](/api-reference/overview) — Explore available endpoints

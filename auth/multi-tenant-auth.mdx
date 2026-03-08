@@ -1,0 +1,61 @@
+---
+title: "Multi-Tenant Auth"
+description: "How authentication works across tenants and white-label domains"
+---
+
+# Multi-Tenant Authentication
+
+## Domain-Based Routing
+
+Cronozen routes users to the correct tenant based on domain:
+
+| Domain Pattern | Tenant Resolution |
+|---------------|-------------------|
+| `cronozen.com` | Platform default |
+| `*.cronozen.com` | Subdomain tenant lookup |
+| Custom domain (e.g. `slowpace.co.kr`) | White-label tenant mapping |
+
+## White-Label Auth
+
+White-label tenants use custom domains with the same auth infrastructure:
+
+```
+slowpace.co.kr → CloudFlare Worker → cronozen.com (rewrite)
+                                   → Auth context: WHITE_LABEL tenant
+```
+
+### Custom Domain Configuration
+
+- `customDomains` — Domain-to-tenant mapping
+- `knownDomains` — All recognized domains
+- CloudFlare Worker handles rewrite logic
+
+## Membership Lifecycle
+
+```
+INVITED → PENDING → ACTIVE → SUSPENDED → REJECTED → ENDED
+```
+
+| Status | Can Access | Can Login |
+|--------|-----------|-----------|
+| `INVITED` | No | No |
+| `PENDING` | No | Yes (limited) |
+| `ACTIVE` | Yes | Yes |
+| `SUSPENDED` | No | Yes (limited) |
+| `REJECTED` | No | No |
+| `ENDED` | No | No |
+
+## Resolver Chain
+
+The UI adapts based on the actor's context through 6 resolvers:
+
+```
+ActorLifecycle → OnboardingStep → SidebarContext
+                                → VerticalPath
+                                → UIFeatures
+                                → UIContext
+```
+
+<Info>
+  UI is determined by **domain prefix + membership role**, never by `center.type`. This ensures consistent behavior across tenant types.
+</Info>

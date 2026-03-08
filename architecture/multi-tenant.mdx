@@ -1,0 +1,73 @@
+---
+title: "Multi-Tenant Architecture"
+description: "How Cronozen isolates tenant data and manages center-based access"
+---
+
+# Multi-Tenant Architecture
+
+## Tenant Isolation Model
+
+Cronozen uses **row-level tenant isolation** with Prisma scoped models. Every data query is automatically filtered by `center_id`.
+
+```typescript
+// All queries scoped to current center
+const scopedPrisma = createScopedPrisma(centerId);
+const members = await scopedPrisma.centerMembership.findMany();
+// → WHERE center_id = 'center_123' automatically applied
+```
+
+## Actor-Workspace Separation
+
+| Actor | Data Access |
+|-------|------------|
+| **Instructor** | Workspace and center data completely isolated. Must explicitly enter a center. |
+| **Parent** | Can view data across all centers where children are enrolled. Cross-center aggregation supported. |
+| **Admin** | Full access within their center scope. |
+
+## Membership-Based Access
+
+There is no direct center access. All access flows through memberships:
+
+```
+Actor → CenterMembership (ACTIVE) → Center Data
+```
+
+<Warning>
+  The `getActor` center_id fallback has been removed. All center access must go through `center_memberships`. This was verified with zero affected rows in staging and production.
+</Warning>
+
+## Scoped vs Base Prisma
+
+| Mode | Use Case | Audit |
+|------|----------|-------|
+| `scopedPrisma` | Normal operations within current center | Automatic |
+| `basePrisma` | Cross-center queries (parent aggregation, admin tools) | Required |
+
+```typescript
+// ✅ Normal: scoped to current center
+const schedules = await scopedPrisma.schedule.findMany();
+
+// ⚠️ Cross-center: explicitly audited
+const allCenters = await basePrisma.center.findMany({
+  where: { id: { in: authorizedCenterIds } }
+});
+```
+
+## Center Scope Helpers
+
+```typescript
+// Require center scope — throws if not in center context
+const { centerId } = requireCenterScope(session);
+
+// Get center scope or error
+const result = getCenterScopeOrError(session);
+```
+
+## Tenant Types
+
+| Type | Description |
+|------|------------|
+| `CENTER` | Standard center tenant |
+| `WORKSPACE` | Personal actor workspace |
+| `PROGRAM` | Program within a center |
+| `WHITE_LABEL` | Partner-branded instance |

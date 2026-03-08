@@ -1,0 +1,105 @@
+---
+title: "Auth API"
+description: "Authentication and session management endpoints"
+---
+
+# Auth API
+
+## Login
+
+<Note>
+  All authentication flows through the OPS hub at `cronozen.com`.
+</Note>
+
+### POST /api/auth/login
+
+Authenticate and receive a JWT token.
+
+**Request:**
+
+```json
+{
+  "email": "user@example.com",
+  "password": "password"
+}
+```
+
+**Response:**
+
+```json
+{
+  "success": true,
+  "data": {
+    "token": "eyJhbG...",
+    "actor": {
+      "id": "actor_123",
+      "role": "ADMIN",
+      "centerId": "center_456"
+    }
+  }
+}
+```
+
+---
+
+### GET /api/auth/me
+
+Get current authenticated actor's info with tenant context.
+
+**Headers:**
+
+```
+Authorization: Bearer <token>
+```
+
+**Response:**
+
+```json
+{
+  "success": true,
+  "data": {
+    "actor": {
+      "id": "actor_123",
+      "name": "홍길동",
+      "email": "user@example.com",
+      "role": "ADMIN"
+    },
+    "center": {
+      "id": "center_456",
+      "name": "서초센터"
+    },
+    "authorizedDomains": ["cronozen.com"],
+    "memberships": [...]
+  }
+}
+```
+
+---
+
+### POST /api/auth/switch-center
+
+Switch the current tenant context.
+
+**Request:**
+
+```json
+{
+  "centerId": "center_789"
+}
+```
+
+**Response:**
+
+```json
+{
+  "success": true,
+  "data": {
+    "token": "eyJhbG...(new token)",
+    "centerId": "center_789"
+  }
+}
+```
+
+<Warning>
+  The actor must have an ACTIVE membership in the target center. Switching to a center without membership returns `403 Forbidden`.
+</Warning>

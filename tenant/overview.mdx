@@ -1,0 +1,58 @@
+---
+title: "Tenant System"
+description: "Multi-tenant management and center lifecycle"
+---
+
+# Tenant System
+
+## Tenant Types
+
+| Type | Description | Example |
+|------|------------|---------|
+| `CENTER` | Standard center | Rehab center, pharmacy |
+| `WORKSPACE` | Personal space | Instructor's workspace |
+| `PROGRAM` | Sub-unit of center | Specific therapy program |
+| `WHITE_LABEL` | Partner-branded | slowpace.co.kr |
+
+## Center Lifecycle
+
+```
+Provisioning → Active → (Suspended) → Ended
+```
+
+### Provisioning
+
+Center creation includes:
+1. Create center record
+2. Set up default roles and permissions
+3. Configure vertical-specific settings
+4. Create admin membership
+5. Initialize audit log
+
+All 5 steps are wrapped in a **database transaction** for consistency.
+
+## Data Isolation
+
+Every center's data is isolated through `center_id` scoping:
+
+- 200+ tables filtered by `center_id`
+- Prisma middleware enforces scoping automatically
+- `basePrisma` for cross-center operations (audited)
+
+## Partner Platform
+
+Cronozen supports partner organizations managing multiple centers:
+
+| Customer Type | Description |
+|--------------|------------|
+| **A** | Direct center operators |
+| **B** | White-label partners |
+| **C** | Franchise networks |
+
+### Partner APIs
+
+- `GET /api/partner/centers` — List managed centers
+- `POST /api/partner/centers` — Create new center
+- `GET /api/partner/stats/dashboard` — Dashboard statistics
+- `GET /api/partner/audit` — Audit log
+- `GET /api/partner/members` — Member management

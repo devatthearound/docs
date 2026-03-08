@@ -1,0 +1,53 @@
+---
+title: "Workspaces"
+description: "Personal workspaces for actors"
+---
+
+# Workspaces
+
+## What is a Workspace?
+
+A **Workspace** is a personal space for an actor, separate from any center. It serves as the actor's home base for managing their cross-center activities.
+
+## Workspace vs Center
+
+| Aspect | Workspace | Center |
+|--------|-----------|--------|
+| Owner | Individual actor | Organization |
+| Data scope | Personal | Shared among members |
+| Detection | `isPersonalWorkspaceDomain()` | Domain/subdomain lookup |
+| Members | Owner only | Multiple actors |
+
+## Actor-Workspace Data Isolation
+
+### Instructors
+
+Instructors have **complete isolation** between workspace and center data:
+
+- Workspace: personal schedule, notes, portfolio
+- Center: assigned students, center schedule, reports
+- Must explicitly "enter" a center via `center.id`
+
+### Parents
+
+Parents can view data **across all centers** where their children are enrolled:
+
+- Workspace: aggregated view of all children's activities
+- Uses `basePrisma` for cross-center queries
+- Scoped by authorized center IDs from membership
+
+## Workspace Detection
+
+```typescript
+import { isPersonalWorkspaceDomain } from '@/lib/auth';
+
+if (isPersonalWorkspaceDomain(domain)) {
+  // Workspace context — show personal dashboard
+} else {
+  // Center context — show center dashboard
+}
+```
+
+<Info>
+  Workspace detection is the **SSOT** for determining if an actor is in personal or center context. Never check `center.type` for this purpose.
+</Info>

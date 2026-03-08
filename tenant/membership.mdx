@@ -1,0 +1,64 @@
+---
+title: "Membership"
+description: "Actor-to-center membership lifecycle and management"
+---
+
+# Membership System
+
+## Lifecycle
+
+Every actor-to-center relationship follows a strict lifecycle:
+
+```
+INVITED → PENDING → ACTIVE → SUSPENDED → REJECTED → ENDED
+```
+
+| Status | Description | Data Access |
+|--------|------------|-------------|
+| `INVITED` | Invitation sent, not yet accepted | None |
+| `PENDING` | Accepted invitation, awaiting approval | Limited |
+| `ACTIVE` | Full member | Full (scoped) |
+| `SUSPENDED` | Temporarily disabled | None |
+| `REJECTED` | Application rejected | None |
+| `ENDED` | Membership terminated | None |
+
+## Database Schema
+
+Key columns in `center_memberships`:
+
+| Column | Type | Description |
+|--------|------|------------|
+| `actor_id` | UUID | The member |
+| `center_id` | UUID | The center |
+| `role` | ENUM | ADMIN, INSTRUCTOR, PARENT, CHILD |
+| `status` | ENUM | Lifecycle status |
+| `invited_at` | TIMESTAMP | When invitation was sent |
+| `ended_at` | TIMESTAMP | When membership ended |
+| `status_reason` | TEXT | Reason for status change |
+
+## Security Guarantees
+
+<Warning>
+  - **No backdoor access**: All center data access requires an ACTIVE membership
+  - **No center_id fallback**: Direct center access without membership was removed and verified (0 affected rows in staging/production)
+  - **Audit trail**: All membership status changes are logged
+</Warning>
+
+## Querying Memberships
+
+```typescript
+// Get all active memberships for an actor
+const memberships = await basePrisma.centerMembership.findMany({
+  where: {
+    actorId: actor.id,
+    status: 'ACTIVE',
+  },
+  include: { center: true },
+});
+
+// Get all members of a center (scoped)
+const members = await scopedPrisma.centerMembership.findMany({
+  where: { status: 'ACTIVE' },
+  include: { actor: true },
+});
+```

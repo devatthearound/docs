@@ -1,0 +1,68 @@
+---
+title: "Architecture Overview"
+description: "Cronozen platform architecture — hub-and-spoke ecosystem"
+---
+
+# Architecture Overview
+
+## Hub-and-Spoke Model
+
+Cronozen is designed as a **hub-and-spoke** ecosystem where OPS acts as the central hub.
+
+```
+                    ┌─────────────┐
+                    │   OPS Hub   │
+                    │ cronozen.com│
+                    └──────┬──────┘
+                           │
+            ┌──────────────┼──────────────┐
+            │              │              │
+     ┌──────┴──────┐ ┌────┴────┐ ┌───────┴──────┐
+     │     LMS     │ │   CMS   │ │     ERP      │
+     │learn.cronozen│ │blog.cronozen│ │erp.cronozen│
+     └─────────────┘ └─────────┘ └──────────────┘
+```
+
+### OPS Hub Responsibilities
+
+- **SSO** — Single sign-on for all services (auth.cronozen.com)
+- **Payments** — Toss Payments integration, subscription management
+- **Tenant Master** — Center/workspace provisioning and lifecycle
+- **DPU** — Decision Proof Unit (hash chain governance)
+- **7 Verticals** — Rehab, welfare, education, pharmacy, commerce, mentoring, interior
+
+### Spoke Services
+
+| Service | Focus | Key Features |
+|---------|-------|-------------|
+| **LMS** | Learning | HRD-Net compliance, EMON, course management |
+| **CMS** | Content | Blog, manuals, SEO, multi-tenant content |
+| **ERP** | Business | Accounting, invoicing, HR (Odoo-based) |
+
+## Tech Stack
+
+| Layer | Technology |
+|-------|-----------|
+| Frontend | Next.js 16, TypeScript, Tailwind CSS |
+| Backend | Next.js API Routes, Prisma 6.18 |
+| Database | PostgreSQL (pgvector), Redis |
+| Auth | JWT, SSO, multi-tenant session |
+| Infra | AWS ECS Fargate, ECR, S3, CloudFront |
+| CI/CD | GitHub Actions |
+
+## Data Flow
+
+```
+Client Request
+  → CloudFlare (DNS + WAF)
+    → ECS Fargate (Next.js)
+      → Prisma (scoped to center_id)
+        → PostgreSQL (RDS, VPC internal)
+```
+
+## Deployment
+
+| Branch | Environment | Auto-deploy |
+|--------|-------------|-------------|
+| `develop` | Staging | Yes |
+| `main` | Production | Yes |

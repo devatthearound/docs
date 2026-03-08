@@ -1,0 +1,66 @@
+---
+title: "Workflow API"
+description: "AI automation workflow endpoints"
+---
+
+# Workflow API
+
+## Overview
+
+The workflow API manages AI-powered automation across verticals.
+
+### GET /api/workflows
+
+List available workflows for the current center.
+
+**Response:**
+
+```json
+{
+  "success": true,
+  "data": [
+    {
+      "id": "wf_001",
+      "name": "Weekly Progress Report",
+      "type": "SCHEDULED",
+      "status": "ACTIVE",
+      "vertical": "rehabilitation",
+      "lastRun": "2026-03-07T09:00:00Z"
+    }
+  ]
+}
+```
+
+---
+
+### POST /api/workflows/:workflowId/execute
+
+Manually trigger a workflow execution.
+
+**Request:**
+
+```json
+{
+  "parameters": {
+    "dateRange": "2026-03-01/2026-03-07",
+    "includeInactive": false
+  }
+}
+```
+
+**Response:**
+
+```json
+{
+  "success": true,
+  "data": {
+    "executionId": "exec_123",
+    "status": "RUNNING",
+    "startedAt": "2026-03-08T09:30:00Z"
+  }
+}
+```
+
+<Info>
+  All workflow executions are recorded in the DPU audit trail. AI-generated outputs are marked as `DRAFT` evidence level until human review.
+</Info>

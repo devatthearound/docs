@@ -1,0 +1,52 @@
+---
+title: "JWT & Sessions"
+description: "JWT token structure and session management"
+---
+
+# JWT & Sessions
+
+## Token Issuance
+
+Tokens are issued by `buildAuthSession()` after successful authentication:
+
+```typescript
+const session = await buildAuthSession(actor, {
+  centerId: resolvedCenterId,
+  authorizedDomains: domainInfo.domains,
+  domainRoles: domainInfo.roles,
+});
+```
+
+## Token Lifecycle
+
+| Event | Action |
+|-------|--------|
+| Login | Issue new JWT |
+| Center switch | Reissue with new `centerId` |
+| Token refresh | Reissue with extended expiry |
+| Logout | Invalidate session |
+
+## Multi-Tenant Session
+
+A single JWT carries the current tenant context. When switching centers:
+
+1. Verify actor has active membership in target center
+2. Reissue JWT with new `centerId` and `domainRoles`
+3. Client refreshes with new token
+
+```bash
+POST /api/auth/switch-center
+Authorization: Bearer <current-token>
+
+{
+  "centerId": "center_789"
+}
+```
+
+## Security Notes
+
+<Warning>
+  - All center access is verified through `center_memberships` — no direct access
+  - `basePrisma` usage is audited for cross-center operations
+  - Cron routes require `verifyCronSecret()` — 39 routes standardized
+</Warning>
