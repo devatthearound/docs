@@ -64,3 +64,34 @@ Manually trigger a workflow execution.
 <Info>
   All workflow executions are recorded in the DPU audit trail. AI-generated outputs are marked as `DRAFT` evidence level until human review.
 </Info>
+
+---
+
+### GET /api/workflows/:workflowId/executions
+
+List past executions of a specific workflow.
+
+**Response:**
+
+```json
+{
+  "success": true,
+  "data": [
+    {
+      "executionId": "exec_123",
+      "status": "COMPLETED",
+      "startedAt": "2026-03-08T09:30:00Z",
+      "completedAt": "2026-03-08T09:31:15Z",
+      "dpuId": "dpu_789",
+      "evidenceLevel": "DRAFT"
+    }
+  ]
+}
+```
+
+<Warning>
+  The following Workflow API endpoints are planned but not yet available:
+  - `POST /api/workflows` — Create custom workflow
+  - `PATCH /api/workflows/:workflowId` — Update workflow configuration
+  - `DELETE /api/workflows/:workflowId` — Deactivate workflow
+</Warning>

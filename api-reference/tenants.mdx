@@ -87,3 +87,23 @@ Get aggregated statistics across all partner centers.
   }
 }
 ```
+
+### GET /api/partner/audit
+
+Retrieve audit log entries across partner-managed centers.
+
+### GET /api/partner/members
+
+List all members across partner-managed centers.
+
+### GET/PATCH /api/partner/settings
+
+Retrieve or update partner organization settings.
+
+<Warning>
+  The following Partner API endpoints are planned but not yet available:
+  - `PATCH /api/partner/centers/:centerId` — Update center details
+  - `DELETE /api/partner/centers/:centerId` — Deactivate center
+  - `POST /api/partner/members/invite` — Invite members
+  - `Webhooks` — Event notifications for center/member changes
+</Warning>
