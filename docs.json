@@ -57,6 +57,13 @@
         ]
       },
       {
+        "group": "Guides",
+        "pages": [
+          "guides/white-label-setup",
+          "guides/lms-integration"
+        ]
+      },
+      {
         "group": "API Reference",
         "pages": [
           "api-reference/overview",

@@ -1,0 +1,383 @@
+---
+title: "White-Label Setup"
+description: "End-to-end guide for deploying a white-label branded instance of Cronozen"
+---
+
+# White-Label Setup Guide
+
+Deploy a fully branded instance of Cronozen under your own domain. White-label partners get their own domain, branding, landing pages, and isolated data — all powered by the Cronozen platform.
+
+## Architecture Overview
+
+```
+Customer visits brand.co.kr
+         │
+         ▼
+   CloudFlare Worker
+   (proxy + rewrite)
+         │
+         ▼
+   cronozen.com ECS
+   (multi-tenant app)
+         │
+    ┌────┴────┐
+    │ Routing │──▶ /brand-slug/* (tenant pages)
+    └────┬────┘
+         │
+    ┌────┴────┐
+    │  Auth   │──▶ auth.cronozen.com (Central SSO)
+    └────┬────┘
+         │
+    ┌────┴────┐
+    │  Data   │──▶ Row-level isolation (center_id)
+    └─────────┘
+```
+
+White-label domains are **reverse proxies** to `cronozen.com`. The CloudFlare Worker handles domain rewriting, SEO meta tag substitution, and GA4 tracking ID replacement. Authentication flows through Central Auth (auth.cronozen.com) with brand-specific redirect URIs.
+
+---
+
+## Prerequisites
+
+Before starting, ensure you have:
+
+- CloudFlare account access (API token with DNS + Workers permissions)
+- AWS CLI configured (for database access via Lambda)
+- Access to the `thearound-ops` repository
+- The partner's domain registered and DNS pointed to CloudFlare
+
+---
+
+## Phase 1: Database Setup
+
+### 1.1 Create White-Label Agreement
+
+Register the partner in the `whitelabel_agreements` table. This can be done via the Admin API or a provisioning script.
+
+**Via Admin API:**
+
+```bash
+POST /api/admin/partners/onboard
+```
+
+```json
+{
+  "partnerName": "Brand Name",
+  "partnerDomain": "brand-slug",
+  "centerName": "Brand Center",
+  "centerType": "REHAB_CENTER",
+  "adminName": "Admin Name",
+  "adminEmail": "admin@brand.co.kr",
+  "revenueShareRate": 15,
+  "contractStartDate": "2026-04-01"
+}
+```
+
+This single API call creates:
+- `whitelabel_agreements` record (partner contract)
+- `centers` record (tenant)
+- `center_tenant_mapping` (cross-service linking)
+- `unified_actors` (admin account)
+- `center_memberships` (admin membership)
+
+### 1.2 Configure Features & Branding
+
+Update the white-label agreement with branding and feature flags:
+
+```json
+{
+  "branding_logo": "https://cdn.brand.co.kr/logo.svg",
+  "branding_primary_color": "#1A5276",
+  "branding_favicon": "https://cdn.brand.co.kr/favicon.ico",
+  "branding_og_image": "https://cdn.brand.co.kr/og.png",
+  "landing_hero_title": "Brand Tagline",
+  "seo_title": "Brand Name - Service Description",
+  "seo_description": "Meta description for search engines",
+  "features": {
+    "survey": true,
+    "voucher": true,
+    "matching": true,
+    "case_management": false
+  },
+  "enabled_domains": ["rehab"],
+  "public_signup_enabled": false,
+  "public_page_enabled": true
+}
+```
+
+<Info>
+  Set `public_signup_enabled: false` initially. Enable only after testing the full auth flow.
+</Info>
+
+---
+
+## Phase 2: Application Configuration
+
+Three config files must be updated in the `thearound-ops` repository.
+
+### 2.1 Domain Registry
+
+**File:** `config/domains.config.ts`
+
+```typescript
+'brand.co.kr': {
+  domain: 'brand.co.kr',
+  centerDomain: 'brand-slug',
+  centerName: 'Brand Name',
+  type: 'REHAB_CENTER',
+  theme: {
+    primaryColor: '#1A5276',
+    logo: 'https://cdn.brand.co.kr/logo.svg',
+    favicon: 'https://cdn.brand.co.kr/favicon.ico'
+  }
+}
+```
+
+### 2.2 Proxy Constants
+
+**File:** `src/lib/proxy/constants.ts`
+
+Add three entries:
+
+```typescript
+// 1. Custom domain mapping
+customDomains['brand.co.kr'] = { type: 'rehab', slug: 'brand-slug' }
+
+// 2. Auth client mapping
+CUSTOM_DOMAIN_AUTH_CLIENTS['brand.co.kr'] = 'brand'
+
+// 3. Public page segments (opt-in rewrite policy)
+// Only listed segments are rewritten; all others pass through safely
+CUSTOM_DOMAIN_REWRITE_SEGMENTS['rehab'] = new Set([
+  '',                    // root landing
+  'pricing',             // pricing page
+  'marketplace',         // marketplace
+  'terms', 'privacy',   // legal pages
+])
+```
+
+<Warning>
+  The rewrite policy is **opt-in by default**. Only segments explicitly listed in `CUSTOM_DOMAIN_REWRITE_SEGMENTS` are proxied. This prevents accidental exposure of internal pages on the custom domain.
+</Warning>
+
+### 2.3 Auth Client Registration
+
+**File:** `config/auth-clients.config.ts`
+
+```typescript
+brand: {
+  name: 'Brand Name',
+  allowedRedirectUris: [
+    'https://brand.co.kr/api/auth/central-callback'
+  ],
+  usesCookieSharing: false  // host-only cookies (recommended)
+}
+```
+
+<Info>
+  Set `usesCookieSharing: false` for white-label domains. This ensures cookies are scoped to the brand domain only, preventing cross-domain leakage.
+</Info>
+
+---
+
+## Phase 3: CloudFlare Setup
+
+### 3.1 DNS Configuration
+
+Add the custom domain zone to CloudFlare, then create DNS records:
+
+```bash
+# A record pointing to AWS ALB
+curl -X POST "https://api.cloudflare.com/client/v4/zones/{zone_id}/dns_records" \
+  -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
+  -d '{
+    "type": "A",
+    "name": "brand.co.kr",
+    "content": "<ALB_ELASTIC_IP>",
+    "proxied": true
+  }'
+```
+
+### 3.2 CloudFlare Worker
+
+Create a Worker that proxies requests from `brand.co.kr` to `cronozen.com`:
+
+**Key Worker responsibilities:**
+- Root path (`/`) rewrite to `/{brand-slug}` landing page
+- Auth paths (`/auth`, `/login`) rewrite to `/{brand-slug}/login`
+- Static files (`/sitemap.xml`, `/robots.txt`) served directly
+- **HTMLRewriter** transformations:
+  - GA4 tracking ID replacement (cronozen ID -> brand ID)
+  - OG/Twitter meta tag domain substitution
+  - Canonical link rewrite
+  - Remove `noindex` meta tags (enable SEO for brand domain)
+- CSP header rewrite (preserve `auth.cronozen.com`, replace other cronozen refs)
+
+**Wrangler configuration:**
+
+```toml
+name = "brand-proxy"
+main = "brand-worker.js"
+compatibility_date = "2026-01-09"
+
+[[routes]]
+pattern = "brand.co.kr/*"
+zone_name = "brand.co.kr"
+
+[[routes]]
+pattern = "www.brand.co.kr/*"
+zone_name = "brand.co.kr"
+```
+
+Deploy:
+
+```bash
+wrangler deploy
+```
+
+### 3.3 Legacy Domain Redirects (Optional)
+
+If the partner has an old domain that should redirect to the new canonical domain:
+
+```javascript
+// In the Worker
+if (request.headers.get('host') === 'old-brand.com') {
+  const url = new URL(request.url);
+  url.hostname = 'brand.co.kr';
+  return Response.redirect(url.toString(), 301);
+}
+```
+
+---
+
+## Phase 4: Testing
+
+### Authentication Flow
+
+```
+1. User visits brand.co.kr
+2. Clicks "Login" → redirected to auth.cronozen.com
+3. Enters credentials → Central Auth validates
+4. Redirected to brand.co.kr/api/auth/central-callback
+5. JWT issued with centerDomain = "brand-slug"
+6. User lands on brand.co.kr dashboard
+```
+
+### Verification Checklist
+
+| Test | Expected Result |
+|------|-----------------|
+| `brand.co.kr` loads landing page | Brand logo, colors, content |
+| `brand.co.kr/login` redirects to Central Auth | auth.cronozen.com with client_id=brand |
+| Login completes successfully | Redirect back to brand.co.kr |
+| JWT contains correct centerDomain | `"centerDomain": "brand-slug"` |
+| Data isolation | Only brand center's data visible |
+| `cronozen.com/brand-slug` returns noindex | robots meta tag present |
+| `brand.co.kr` does NOT have noindex | robots meta tag removed by Worker |
+| GA4 events fire with brand tracking ID | Check GA4 real-time |
+
+---
+
+## Phase 5: SEO Configuration
+
+### Philosophy
+
+- **Platform SEO** = `cronozen.com` (platform features, pricing)
+- **Brand SEO** = `brand.co.kr` (customer-facing, indexed by Google)
+- Internal paths (`cronozen.com/brand-slug`) are `noindex` to prevent duplicate content
+
+### Canonical URLs
+
+The CloudFlare Worker rewrites canonical links:
+
+```html
+<!-- Before (cronozen.com) -->
+<link rel="canonical" href="https://cronozen.com/brand-slug/pricing" />
+
+<!-- After (brand.co.kr) -->
+<link rel="canonical" href="https://brand.co.kr/pricing" />
+```
+
+### Sitemap
+
+Each brand domain serves its own `sitemap.xml` via the CloudFlare Worker, containing only the public pages relevant to that brand.
+
+---
+
+## White-Label API
+
+### GET /api/whitelabel/{partner_domain}/config
+
+Retrieve partner branding and feature configuration at runtime.
+
+```json
+{
+  "branding": {
+    "logo": "https://cdn.brand.co.kr/logo.svg",
+    "primaryColor": "#1A5276",
+    "favicon": "https://cdn.brand.co.kr/favicon.ico"
+  },
+  "features": {
+    "survey": true,
+    "voucher": true,
+    "matching": true
+  },
+  "enabled_domains": ["rehab"],
+  "terminology": {
+    "center": "Center",
+    "mentee": "Client"
+  }
+}
+```
+
+### Data Model
+
+```
+whitelabel_agreements
+├── partner_domain (unique)
+├── contract_status (ACTIVE / INACTIVE)
+├── business_model (PUBLIC / PRIVATE)
+├── revenue_share_rate (0-100)
+├── branding_* (logo, colors, favicon, OG image)
+├── landing_* (hero title, features, testimonials)
+├── seo_* (title, description, keywords)
+├── features (JSON: survey, voucher, matching, etc.)
+├── enabled_domains (String[]: rehab, edu, welfare)
+└── Relations
+    ├── centers (1:N)
+    └── partner_memberships (1:N)
+```
+
+---
+
+## Cross-Service Integration
+
+White-label tenants can optionally enable CMS (blog) and LMS (learning) services:
+
+| Service | Mapping Field | Domain Pattern |
+|---------|--------------|----------------|
+| OPS | `centers.center_domain` | `brand.co.kr` (via Worker) |
+| CMS | `center_tenant_mapping.cms_tenant_id` | `blog.cronozen.com/{slug}` |
+| LMS | `center_tenant_mapping.lms_tenant_id` | `{slug}.learn.cronozen.com` |
+
+Enable via `center_tenant_mapping`:
+
+```sql
+UPDATE center_tenant_mapping
+SET cms_enabled = true, lms_enabled = true
+WHERE center_domain = 'brand-slug';
+```
+
+---
+
+## Troubleshooting
+
+### Common Issues
+
+| Issue | Cause | Fix |
+|-------|-------|-----|
+| Login redirects to cronozen.com instead of brand domain | Auth client not registered | Add to `auth-clients.config.ts` |
+| 404 on brand.co.kr/pricing | Segment not in rewrite list | Add to `CUSTOM_DOMAIN_REWRITE_SEGMENTS` |
+| Duplicate content in Google | Missing noindex on internal path | Check `robots.ts` in OPS layout |
+| Wrong GA4 data | Worker not replacing tracking ID | Update GA4Rewriter in Worker |
+| CORS errors on API calls | CSP header not rewritten | Check Worker CSP rewrite logic |

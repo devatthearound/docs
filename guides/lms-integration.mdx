@@ -1,0 +1,355 @@
+---
+title: "LMS Platform"
+description: "White-label LMS SaaS for HRD-Net compliant remote training and workshop management"
+---
+
+# LMS Platform
+
+Cronozen LMS (`learn.cronozen.com`) is a white-label learning management system designed for Korean workforce development institutions. It provides HRD-Net regulatory compliance, electronic monitoring (EMON), and DPU-based attendance proof — all integrated with the Cronozen OPS hub.
+
+## Product Lineup
+
+<CardGroup cols={2}>
+  <Card title="Remote Training LMS" icon="laptop">
+    HRD-Net compliant online courses for government-subsidized programs (내일채움카드). Includes EMON integration, anti-fraud protections, and automated compliance reporting.
+  </Card>
+  <Card title="Workshop Management" icon="users">
+    Offline seminar and workshop management with QR check-in, DPU attendance proof, capacity management, and location tracking.
+  </Card>
+</CardGroup>
+
+---
+
+## Architecture
+
+```
+┌──────────────────────────────────────────────┐
+│                  OPS Hub                      │
+│        (auth.cronozen.com / SSO)             │
+│   ┌─────────┬──────────┬──────────┐          │
+│   │  Auth   │  Billing │   DPU    │          │
+│   │  (JWT)  │  (Toss)  │ (Proof)  │          │
+│   └────┬────┴────┬─────┴────┬─────┘          │
+└────────┼─────────┼──────────┼────────────────┘
+         │         │          │
+┌────────▼─────────▼──────────▼────────────────┐
+│              LMS Spoke                        │
+│        (learn.cronozen.com)                   │
+│                                               │
+│   ┌─────────┐  ┌──────────┐  ┌───────────┐  │
+│   │ Learning │  │ Workshop │  │   EMON    │  │
+│   │ Engine   │  │ Attend.  │  │ Reporter  │  │
+│   └─────────┘  └──────────┘  └───────────┘  │
+│                                               │
+│   ┌─────────┐  ┌──────────┐  ┌───────────┐  │
+│   │  HRD    │  │  Fraud   │  │   QR      │  │
+│   │ Comply  │  │ Detect   │  │ Check-in  │  │
+│   └─────────┘  └──────────┘  └───────────┘  │
+└───────────────────────────────────────────────┘
+```
+
+### Hub-Spoke Integration
+
+| Component | Responsibility | Service |
+|-----------|---------------|---------|
+| SSO Authentication | JWT issuance, actor identity | OPS |
+| Billing & Payments | Toss Payments, subscription | OPS |
+| DPU Attendance Proof | SHA-256 hash chain sealing | OPS |
+| Learning Engine | Course delivery, progress tracking | LMS |
+| EMON Reporting | Government monitoring transmission | LMS |
+| Fraud Detection | Anti-cheating, device fingerprint | LMS |
+
+---
+
+## Multi-Tenant Structure
+
+Each training institution is a **tenant** with isolated data, branding, and configuration.
+
+```
+Tenant: seocho-women-center
+├── subdomain: seocho.learn.cronozen.com
+├── centerId: 2 (OPS center mapping)
+├── features: { hrdEnabled, emonEnabled, ... }
+├── Products (courses, workshops)
+├── Registrations (enrollments)
+├── Progress (learner tracking)
+└── Assessments (exams, assignments)
+```
+
+### Tenant Configuration
+
+Tenant-specific settings are stored in the `Configuration` table:
+
+```json
+{
+  "hrdEnabled": true,
+  "hrdPassingScore": 60,
+  "hrdMinProgressPercent": 50,
+  "hrdMaxDailyLessons": 8,
+  "emonEnabled": true,
+  "emonApiUrl": "https://emon.hrd.go.kr/api/v1",
+  "emonInstitutionId": "INST-001"
+}
+```
+
+---
+
+## HRD-Net Compliance
+
+### Regulatory Requirements
+
+HRD-Net (Korea Human Resources Development Service) mandates specific controls for government-subsidized remote training. Non-compliance can result in funding suspension.
+
+### Core Rules
+
+| Rule | Requirement | Implementation |
+|------|------------|----------------|
+| **Learning Activity** | 10-second heartbeat tracking | `heartbeat-service.ts` |
+| **Daily Limit** | Max 8 hours / 8 lessons per day | `lesson-unit-service.ts` |
+| **Completion** | 80% progress + 60-point score | `hrd-completion-service.ts` |
+| **Sequential** | Lessons must be completed in order | Lesson unlock gates |
+| **Assessment** | 3 types: progress check, final exam, assignment | `hrd-assessment-service.ts` |
+| **Identity** | Phone OTP verification (본인인증) | mOTP adapter |
+| **Monitoring** | EMON API data transmission | `emon-adapter.ts` |
+
+### Learning Heartbeat
+
+The heartbeat system tracks learning activity at 10-second intervals:
+
+```json
+{
+  "contentId": "lesson-001",
+  "registrationId": "reg-123",
+  "sessionId": "sess-456",
+  "watchedSeconds": 120,
+  "playbackRate": 1.0,
+  "isPlaying": true,
+  "isTabVisible": true,
+  "isWindowFocused": true,
+  "deviceFingerprint": "fp-hash-789"
+}
+```
+
+**Processing pipeline:**
+1. Client sends heartbeat batch (max 6 beats = 1 minute)
+2. Server validates registration, product ownership, expiration
+3. Updates `DailyLearningLedger` (per-actor daily tracking)
+4. Enforces 8-hour daily cap (28,800 seconds)
+5. Triggers EMON transmission on lesson completion
+
+### Assessment System
+
+Three assessment types with weighted scoring:
+
+| Type | Timing | Weight | Features |
+|------|--------|--------|----------|
+| Progress Check | During course (configurable trigger %) | 20-30% | Must pass to unlock next lessons |
+| Final Exam | After 80% progress | 50-60% | Time-limited, 3x question bank |
+| Assignment | Anytime during course | 10-20% | Plagiarism detection (Jaccard + cosine) |
+
+**Question bank:** Each exam draws from a 3x pool using Fisher-Yates shuffle. If an exam has 20 questions, at least 60 questions must exist in the bank.
+
+**Auto-save:** Student answers are saved every 30 seconds to Redis (2-hour TTL), preventing data loss on connection drops.
+
+---
+
+## Anti-Fraud System (FDS)
+
+### Protections
+
+| Code | Protection | Method |
+|------|-----------|--------|
+| C1 | CAPTCHA verification | Math CAPTCHA, 2-hour Redis pass |
+| C2 | Concurrent session prevention | Redis session lock |
+| C3 | Single learning window | BroadcastChannel API |
+| C4 | Inactivity auto-logout | 2-hour idle timer |
+| C5 | Copy/paste prevention | Exam mode clipboard blocking |
+| C7 | Plagiarism detection | Jaccard + 3-gram cosine similarity (80% threshold) |
+| C8 | Assessment gate | 80% progress required for final exam |
+| C10 | Minimum study time | 50% of lesson duration required |
+| C11 | IP-based fraud detection | Behavioral analysis (partial) |
+
+### Fraud Scoring (Workshop Attendance)
+
+For workshop check-ins, a multi-layer fraud detection system runs in parallel:
+
+```
+Check-in Request
+     │
+     ├── Rate limit: 3 attempts / 5 min per session
+     ├── Device duplicate: fingerprint across participants
+     ├── GPS spoofing: geofence validation (accuracy > 50m = risk)
+     └── Time anomaly: unrealistic check-in patterns
+     │
+     ▼
+Fraud Score: 0.0 ─── 1.0
+  │           │         │
+  PASS      FLAG     BLOCK
+ (<0.3)   (0.3-0.7)  (>0.7)
+```
+
+---
+
+## EMON Integration
+
+EMON (Electronic Monitoring) is the government's real-time monitoring system for HRD-Net courses.
+
+### Data Transmission
+
+The LMS transmits 6 record types to the EMON API:
+
+| Table | Description | Key Fields |
+|-------|-------------|------------|
+| TB_USER_HIST_V2 | Learner info | Name, ID number, email, mobile |
+| TB_USER_LOGIN_HIST_V2 | Login history | IP address, login timestamp |
+| TB_COURSE_HIST_V2 | Course metadata | Total education hours, approval code |
+| TB_CLASS_HIST_V2 | Class sessions | Score, start/end date, insurance type |
+| TB_ATTEND_HIST_V2 | Attendance | Progress rate (0-100), pass flag |
+| TB_SCORE_HIST_V2 | Scores | Eval type, score, IP, plagiarism flag |
+
+### API Endpoints
+
+```
+POST /api/v1/learning/progress    → Lesson progress
+POST /api/v1/assessment/result    → Assessment scores
+POST /api/v1/completion           → Completion proof
+```
+
+The EMON adapter uses a queue system with exponential backoff retry:
+
+```typescript
+EmonAdapter.forTenant(tenantId)
+  .transmitProgress(learnerData)
+  // Retry: 1s → 2s → 4s → 8s (max 4 attempts)
+```
+
+<Warning>
+  EMON transmission failures are logged but do not block the learner experience. Failed transmissions are queued for retry. If retries are exhausted, an alert is generated for manual review.
+</Warning>
+
+---
+
+## DPU Attendance Proof
+
+Workshop attendance is sealed with DPU hash chains for tamper-evident proof.
+
+### Flow
+
+```
+QR Scan → Check-in Request → Fraud Check → DPU Seal
+                                              │
+                                    ┌─────────┴─────────┐
+                                    │  Local LMS Chain   │
+                                    │  SHA-256 hash      │
+                                    │  chainIndex: N     │
+                                    └─────────┬─────────┘
+                                              │
+                                    ┌─────────▼─────────┐
+                                    │   OPS DPU API      │
+                                    │  /api/dpu/demo     │
+                                    │  (non-blocking)    │
+                                    └───────────────────┘
+```
+
+Each attendance record contains:
+- `dpuChainHash`: SHA-256 hash linking to previous record
+- `dpuChainIndex`: Sequential position in the chain
+- `dpuId`: Reference to OPS DPU record
+
+**Tamper detection:** Altering any single record breaks all downstream hashes in the chain, making tampering immediately detectable during audit.
+
+### QR Check-in
+
+```
+POST /api/admin/attendance/{sessionId}/qr → Generate token (5-15 min TTL)
+
+Learner scans QR → POST /api/attendance/check-in
+{
+  "token": "qr-token-abc",
+  "gps": { "lat": 37.4845, "lng": 127.0340, "accuracy": 12.5 },
+  "deviceFingerprint": "fp-hash-789"
+}
+```
+
+---
+
+## API Overview
+
+### Learning APIs (v3)
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| POST | `/api/v3/learning/heartbeat` | Submit activity heartbeat |
+| GET | `/api/v3/learning/hrd-status` | Learner progress view |
+| POST | `/api/v3/learning/hrd-assessment` | Submit exam/assignment |
+| GET | `/api/v3/learning/hrd-completion` | Check completion status |
+| POST | `/api/v3/learning/hrd-dashboard` | Progress dashboard data |
+
+### Admin APIs (v2)
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET/POST | `/api/v2/admin/products` | Course management |
+| GET/PUT | `/api/v2/admin/emon-settings` | EMON configuration |
+| GET | `/api/v2/admin/emon-logs` | Monitoring logs |
+| GET | `/api/v2/admin/hrd` | HRD compliance dashboard |
+
+### Attendance APIs
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| POST | `/api/admin/attendance/sessions` | Create workshop session |
+| POST | `/api/admin/attendance/{sessionId}/qr` | Generate QR token |
+| POST | `/api/attendance/check-in` | Learner check-in |
+| POST | `/api/admin/attendance/manual` | Manual check-in |
+
+### Payment APIs
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| POST | `/api/payments/confirm` | Confirm Toss payment |
+| POST | `/api/payments/webhook` | Toss webhook handler |
+
+---
+
+## Product Types
+
+| Type | Use Case | Payment |
+|------|----------|---------|
+| COURSE | HRD-Net remote training | Via HRD-Net (government) |
+| COACHING | 1:1 mentoring sessions | Toss Payments |
+| PACKAGE | Bundled courses | Toss Payments |
+| WEBINAR | Live online sessions (Zoom) | Toss Payments |
+| WORKSHOP | Offline group training | Toss Payments |
+
+---
+
+## Deployment
+
+| Environment | URL | Branch |
+|------------|-----|--------|
+| Staging | stg-learn.cronozen.com | `develop` |
+| Production | learn.cronozen.com | `main` |
+
+Tenant subdomains: `{slug}.learn.cronozen.com`
+
+### Database
+
+- Separate PostgreSQL instance from OPS (independent RDS)
+- Migration via Lambda: `./scripts/db-migrate.sh query lms-prod "SELECT ..."`
+- DB aliases: `lms-stg`, `lms-prod`
+
+### Tech Stack
+
+| Layer | Technology |
+|-------|-----------|
+| Framework | Next.js 16 + TypeScript |
+| ORM | Prisma 6.18 |
+| Database | PostgreSQL (RDS, VPC internal) |
+| Cache | Redis (sessions, heartbeat, draft answers) |
+| Video | Vimeo (HRD hosting) |
+| Payment | Toss Payments |
+| Meeting | Zoom API (webinars) |
+| Monitoring | EMON API (government) |
+| Auth | OPS SSO (JWT) |
+| Proof | OPS DPU (SHA-256 chains) |
