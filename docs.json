@@ -15,28 +15,12 @@
   },
   "favicon": "/images/favicon.svg",
   "navigation": {
-    "anchors": [
-      {
-        "anchor": "Guides",
-        "icon": "book",
-        "href": "/"
-      },
-      {
-        "anchor": "API Reference",
-        "icon": "terminal",
-        "href": "/api-reference"
-      },
-      {
-        "anchor": "Blog",
-        "icon": "newspaper",
-        "href": "https://blog.cronozen.com"
-      }
-    ],
     "groups": [
       {
         "group": "Getting Started",
         "pages": [
-          "getting-started/introduction",
+          "introduction",
+          "getting-started/quickstart",
           "getting-started/quickstart",
           "getting-started/concepts"
         ]
