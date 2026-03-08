@@ -1,0 +1,187 @@
+---
+title: "Errors & Rate Limits"
+description: "Error codes, rate limiting, and reliability information"
+---
+
+# Errors & Rate Limits
+
+## Error Response Format
+
+All API errors follow a consistent format:
+
+```json
+{
+  "success": false,
+  "error": {
+    "code": "ERROR_CODE",
+    "message": "Human-readable error description"
+  }
+}
+```
+
+---
+
+## Error Codes
+
+### Authentication Errors (4xx)
+
+| Code | HTTP | Description | Resolution |
+|------|------|-------------|------------|
+| `UNAUTHORIZED` | 401 | Missing or invalid token | Include valid JWT in Authorization header |
+| `TOKEN_EXPIRED` | 401 | JWT has expired | Call `/auth/refresh-token` with refresh token |
+| `INVALID_CREDENTIALS` | 401 | Wrong email/password | Check credentials |
+| `FORBIDDEN` | 403 | No permission for this action | Verify actor role and membership status |
+| `NO_MEMBERSHIP` | 403 | No active membership in target center | Request membership or switch to authorized center |
+| `MEMBERSHIP_SUSPENDED` | 403 | Membership is suspended | Contact center admin |
+| `MEMBERSHIP_ENDED` | 403 | Membership has ended | Re-apply for membership |
+| `INSUFFICIENT_ROLE` | 403 | Role lacks required permission | ADMIN, INSTRUCTOR, PARENT, CHILD hierarchy |
+
+### Tenant Errors
+
+| Code | HTTP | Description | Resolution |
+|------|------|-------------|------------|
+| `CENTER_NOT_FOUND` | 404 | Center domain does not exist | Verify center domain slug |
+| `CENTER_SUSPENDED` | 403 | Center is temporarily suspended | Contact partner admin |
+| `SUBDOMAIN_TAKEN` | 409 | Subdomain already registered | Choose a different subdomain |
+| `PROVISIONING_FAILED` | 500 | Center creation failed | Check provisioning logs, retry |
+| `DUPLICATE_PROVISIONING` | 409 | Idempotent provisioning (already created) | Use existing center from response |
+
+### DPU Errors
+
+| Code | HTTP | Description | Resolution |
+|------|------|-------------|------------|
+| `DPU_NOT_FOUND` | 404 | DPU record does not exist | Verify DPU ID |
+| `DPU_SEALED` | 403 | Cannot modify AUDIT_READY record | Create new DPU instead |
+| `CHAIN_BROKEN` | 422 | Hash chain integrity violation detected | Investigation required — data may be tampered |
+| `INVALID_EVIDENCE_LEVEL` | 400 | Invalid evidence level transition | Levels can only increase: DRAFT → DOCUMENTED → AUDIT_READY |
+
+### Validation Errors
+
+| Code | HTTP | Description | Resolution |
+|------|------|-------------|------------|
+| `VALIDATION_ERROR` | 400 | Request body validation failed | Check required fields and types |
+| `INVALID_EMAIL` | 400 | Email format is invalid | Use valid email format |
+| `INVALID_SUBDOMAIN` | 400 | Subdomain format invalid | 3-30 chars, lowercase alphanumeric + hyphens |
+| `MISSING_REQUIRED_FIELD` | 400 | Required field not provided | Include all required fields |
+
+### System Errors
+
+| Code | HTTP | Description | Resolution |
+|------|------|-------------|------------|
+| `INTERNAL_ERROR` | 500 | Unexpected server error | Retry after 1 second, report if persistent |
+| `SERVICE_UNAVAILABLE` | 503 | Service temporarily unavailable | Retry with exponential backoff |
+| `DATABASE_ERROR` | 500 | Database connection or query error | Retry, check service status |
+
+---
+
+## Rate Limiting
+
+### Limits by Tier
+
+| Tier | Limit | Window | Who |
+|------|-------|--------|-----|
+| Standard | 100 requests | per minute | Regular authenticated users |
+| Partner | 500 requests | per minute | Partner admin/operator accounts |
+| Auth | 5 attempts | per 15 minutes | Login/password endpoints |
+| Public | 30 requests | per minute | Unauthenticated endpoints |
+
+### Rate Limit Headers
+
+Every response includes rate limit information:
+
+```
+X-RateLimit-Limit: 100
+X-RateLimit-Remaining: 95
+X-RateLimit-Reset: 1709900400
+```
+
+| Header | Description |
+|--------|-------------|
+| `X-RateLimit-Limit` | Maximum requests allowed in the window |
+| `X-RateLimit-Remaining` | Requests remaining in current window |
+| `X-RateLimit-Reset` | Unix timestamp when the window resets |
+
+### When Rate Limited
+
+```json
+{
+  "success": false,
+  "error": {
+    "code": "RATE_LIMITED",
+    "message": "Too many requests. Try again in 45 seconds."
+  }
+}
+```
+
+**HTTP Status:** `429 Too Many Requests`
+
+**Best practice:** Implement exponential backoff:
+```typescript
+async function fetchWithRetry(url: string, retries = 3) {
+  for (let i = 0; i < retries; i++) {
+    const res = await fetch(url, { headers });
+    if (res.status !== 429) return res;
+
+    const resetAt = parseInt(res.headers.get('X-RateLimit-Reset') || '0');
+    const waitMs = Math.max((resetAt * 1000) - Date.now(), 1000 * (i + 1));
+    await new Promise(r => setTimeout(r, waitMs));
+  }
+  throw new Error('Rate limit exceeded after retries');
+}
+```
+
+---
+
+## Reliability
+
+### Uptime
+
+| Service | Target | Monitoring |
+|---------|--------|-----------|
+| OPS API | 99.9% | Internal CloudWatch |
+| LMS API | 99.9% | Internal CloudWatch |
+| Auth (SSO) | 99.95% | Critical path monitoring |
+| DPU Engine | 99.99% | Append-only, no data loss |
+
+### Retry Strategy
+
+For transient errors (5xx, network timeouts):
+
+```
+Attempt 1: immediate
+Attempt 2: wait 1 second
+Attempt 3: wait 2 seconds
+Attempt 4: wait 4 seconds (max)
+```
+
+<Warning>
+  Do NOT retry `4xx` errors automatically. These indicate client-side issues (bad request, auth failure, permission denied) that won't resolve with retries.
+</Warning>
+
+### Data Durability
+
+| Component | Guarantee |
+|-----------|-----------|
+| PostgreSQL (RDS) | Multi-AZ, automated backups, point-in-time recovery |
+| DPU Records | Append-only, hash chain integrity, no delete/update after sealing |
+| S3 Assets | 99.999999999% durability (11 nines) |
+| Redis | In-memory cache, not persistence layer — data can be rebuilt |
+
+---
+
+## Idempotency
+
+Provisioning endpoints support idempotent requests:
+
+```bash
+# Same orderId = same result (no duplicate centers)
+POST /api/provisioning/center-tenant
+{
+  "orderId": "order_abc123",  # idempotency key
+  "centerName": "New Center",
+  "subdomain": "new-center",
+  "planId": "plan_starter"
+}
+```
+
+If the same `orderId` is sent twice, the API returns the existing center instead of creating a duplicate.

@@ -21,6 +21,7 @@
         "group": "Getting Started",
         "pages": [
           "introduction",
+          "why-cronozen",
           "build-with-cronozen",
           "getting-started/quickstart",
           "getting-started/concepts",
@@ -82,7 +83,8 @@
           "api-reference/overview",
           "api-reference/authentication",
           "api-reference/tenants",
-          "api-reference/workflows"
+          "api-reference/workflows",
+          "api-reference/errors"
         ]
       }
     ]

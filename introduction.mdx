@@ -1,61 +1,118 @@
 ---
-title: "Introduction"
-description: "Cronozen — Multi-tenant SaaS platform for center management and AI automation"
+title: "Cronozen Docs"
+description: "Build SaaS platforms without building infrastructure. Multi-tenant, AI-native, audit-ready."
 ---
 
-# Welcome to Cronozen
+<div className="not-prose mb-8">
+  <h1 className="text-4xl font-bold tracking-tight mb-4">Build on Cronozen</h1>
+  <p className="text-xl text-muted-foreground max-w-2xl">
+    Multi-tenant SaaS infrastructure with built-in authentication, billing, AI automation, and cryptographic decision proof. Ship your vertical platform in weeks, not years.
+  </p>
+</div>
 
-Cronozen is a **multi-tenant SaaS operating system** designed for center-based businesses across 7 verticals:
-
-- Rehabilitation
-- Welfare
-- Education
-- Pharmacy
-- Commerce
-- Mentoring
-- Interior
-
-## What Cronozen Does
-
-<CardGroup cols={2}>
-  <Card title="Multi-Tenant Platform" icon="building">
-    Each center operates as an isolated tenant with its own data, members, and configuration.
+<CardGroup cols={3}>
+  <Card title="Quickstart" icon="rocket" href="/getting-started/quickstart">
+    First API call in 5 minutes
   </Card>
-  <Card title="Actor-Based Auth" icon="users">
-    Role-based access with ADMIN, INSTRUCTOR, PARENT, and CHILD actors.
+  <Card title="Build with Cronozen" icon="hammer" href="/build-with-cronozen">
+    See what you can build
   </Card>
-  <Card title="DPU (Decision Proof)" icon="shield-check">
-    SHA-256 hash chain for audit-ready decision tracking and governance.
-  </Card>
-  <Card title="AI Automation" icon="robot">
-    Workflow engine with AI-powered scheduling, reporting, and operations.
+  <Card title="API Reference" icon="code" href="/api-reference/overview">
+    Explore 30+ endpoints
   </Card>
 </CardGroup>
 
-## Ecosystem
+---
 
-Cronozen operates as a **hub-and-spoke** architecture:
+## Why Cronozen?
 
-| Service | Domain | Role |
-|---------|--------|------|
-| **OPS** | cronozen.com | Hub — SSO, payments, tenant master, DPU |
-| **LMS** | learn.cronozen.com | Learning engine, compliance |
-| **CMS** | blog.cronozen.com | Blog, manuals, content |
-| **ERP** | erp.cronozen.com | Business management |
-
-## Next Steps
+You shouldn't have to build multi-tenancy, auth, billing, and audit trails from scratch every time.
 
 <CardGroup cols={2}>
-  <Card title="Quickstart" icon="rocket" href="/getting-started/quickstart">
-    Get up and running in minutes
+  <Card title="Multi-Tenant Isolation" icon="shield">
+    Row-level data isolation across 200+ tables. Scoped database queries. Center-based access control. Works from day one.
+  </Card>
+  <Card title="Decision Proof (DPU)" icon="link">
+    SHA-256 hash chains seal every decision. Tamper-evident, audit-ready, exportable as JSON-LD. No other SaaS platform has this.
+  </Card>
+  <Card title="White-Label Ready" icon="palette">
+    Custom domains, branding, landing pages via CloudFlare Workers. Your customer sees their brand — powered by your infrastructure.
+  </Card>
+  <Card title="AI-Native" icon="robot">
+    Workflow engine, pgvector embeddings, 5-level governance guards. AI decisions are recorded, reviewed, and provable.
+  </Card>
+</CardGroup>
+
+<Card title="Read: Why Cronozen" icon="lightbulb" href="/why-cronozen">
+  How Cronozen differs from traditional SaaS stacks and why it matters for regulated industries.
+</Card>
+
+---
+
+## Platform Architecture
+
+```
+           ┌──────────────────────────┐
+           │    OPS Hub               │
+           │    (cronozen.com)        │
+           │                          │
+           │  Auth · Billing · DPU    │
+           │  Tenants · AI Workflows  │
+           └────┬────────┬────────┬───┘
+                │        │        │
+         ┌──────▼──┐ ┌───▼───┐ ┌──▼───┐
+         │  LMS    │ │  CMS  │ │  ERP │
+         │ learn.  │ │ blog. │ │ erp. │
+         └─────────┘ └───────┘ └──────┘
+```
+
+| Service | Domain | Purpose |
+|---------|--------|---------|
+| **OPS** | cronozen.com | Hub — SSO, payments, tenant master, DPU, 7 verticals |
+| **LMS** | learn.cronozen.com | HRD-Net compliant LMS, EMON, workshop attendance |
+| **CMS** | blog.cronozen.com | Blog, user manuals, SEO content |
+| **ERP** | erp.cronozen.com | Odoo-based business management |
+| **Docs** | docs.cronozen.com | Developer documentation (you are here) |
+
+---
+
+## For AI Agents
+
+Cronozen is designed to be AI-readable:
+
+| Resource | URL | Purpose |
+|----------|-----|---------|
+| llms.txt | [/llms.txt](/llms.txt) | Quick platform summary for LLMs |
+| llms-full.txt | [/llms-full.txt](/llms-full.txt) | Full technical context |
+| OpenAPI | [/openapi.yaml](/openapi.yaml) | API spec for code generation |
+| AI Context | [/ai-context](/ai-context) | Structured reference for agents |
+
+```bash
+# Generate a TypeScript client with Cursor or Claude:
+"Read docs.cronozen.com/openapi.yaml and generate a typed API client"
+```
+
+---
+
+## Explore
+
+<CardGroup cols={2}>
+  <Card title="System Diagram" icon="sitemap" href="/architecture/system-diagram">
+    Visual architecture with Mermaid diagrams
   </Card>
   <Card title="Core Concepts" icon="lightbulb" href="/getting-started/concepts">
-    Understand the key abstractions
+    Actors, tenants, membership, DPU
   </Card>
-  <Card title="Architecture" icon="sitemap" href="/architecture/overview">
-    Deep dive into system design
+  <Card title="TypeScript SDK" icon="code" href="/examples/typescript-sdk">
+    Full client library with types
   </Card>
-  <Card title="API Reference" icon="code" href="/api-reference/overview">
-    Explore the APIs
+  <Card title="White-Label Guide" icon="palette" href="/guides/white-label-setup">
+    Deploy a branded instance in 2 hours
+  </Card>
+  <Card title="LMS Platform" icon="graduation-cap" href="/guides/lms-integration">
+    HRD-Net compliance, EMON, QR attendance
+  </Card>
+  <Card title="Data Model" icon="database" href="/guides/data-model">
+    Core entities and relationships
   </Card>
 </CardGroup>

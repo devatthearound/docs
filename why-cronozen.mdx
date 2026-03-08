@@ -1,0 +1,192 @@
+---
+title: "Why Cronozen"
+description: "How Cronozen differs from traditional SaaS stacks and why it matters"
+---
+
+# Why Cronozen
+
+Most SaaS platforms solve one problem. Cronozen solves the infrastructure problem — so you can focus on your vertical.
+
+---
+
+## The Problem
+
+Building a multi-tenant SaaS platform for regulated industries requires:
+
+| Component | Typical Build Time | Risk |
+|-----------|-------------------|------|
+| Multi-tenant isolation | 2-3 months | Data leaks between tenants |
+| Authentication + SSO | 1-2 months | Security vulnerabilities |
+| Billing + subscriptions | 1-2 months | Revenue loss from billing bugs |
+| Audit trail | 1 month | Compliance failures |
+| White-label support | 2-3 months | Brand confusion |
+| AI governance | 2-3 months | Unverifiable AI decisions |
+
+**Total: 10-16 months before you write a single line of domain logic.**
+
+Most teams either:
+- Build everything from scratch (slow, expensive, risky)
+- Stitch together 10+ SaaS tools (fragile, data silos, no audit trail)
+- Use a generic framework (still months of plumbing)
+
+---
+
+## The Cronozen Approach
+
+Cronozen is a **Vertical SaaS Operating System**. You get multi-tenancy, auth, billing, audit trails, and AI governance as infrastructure — not as features you have to build.
+
+```
+Traditional Stack                   Cronozen Stack
+─────────────────                   ──────────────
+Your app                            Your vertical logic
++ Auth0 / Clerk                     ─────────────────
++ Stripe billing                    Cronozen Platform
++ Custom multi-tenant               (auth, billing, tenants,
++ Custom audit trail                 DPU, AI, white-label)
++ Custom AI governance              ─────────────────
++ 10 other services                 PostgreSQL + Redis
+─────────────────
+PostgreSQL
+```
+
+**What changes:**
+- Multi-tenancy is not an afterthought — it's the foundation
+- Audit trails are not logs — they're cryptographic proof chains
+- AI is not a black box — every decision is recorded, reviewed, and provable
+- White-label is not a CSS theme — it's full domain isolation with SSO
+
+---
+
+## What Makes Cronozen Different
+
+### 1. Decision Proof Unit (DPU)
+
+No other SaaS platform has built-in cryptographic decision proof.
+
+Traditional audit logs tell you **what happened**. DPU proves **that it happened, and nothing was altered.**
+
+```
+Traditional Audit Log:
+  "User X approved document Y at time Z"
+  → Can be edited. Can be deleted. Can be fabricated.
+
+Cronozen DPU:
+  SHA-256(content + previousHash + timestamp)
+  → Tamper one record, break the entire chain.
+  → Export as JSON-LD v2 for external verification.
+  → 5 governance guards for AI decisions.
+```
+
+This matters for:
+- Healthcare (therapy decisions, treatment plans)
+- Education (HRD-Net compliance, attendance proof)
+- Government (subsidy audit, public fund tracking)
+- AI governance (EU AI Act, explainability requirements)
+
+### 2. True Multi-Tenancy
+
+Not "one database per customer." Not "schema-per-tenant."
+
+Cronozen uses **row-level isolation with scoped Prisma middleware**:
+
+- 200+ tables, every query filtered by `center_id`
+- Scoped Prisma automatically injects tenant context
+- Impossible to accidentally query another tenant's data
+- Proven at scale: 0 DANGER findings in security audit (213 queries reviewed)
+
+### 3. Hub-and-Spoke Ecosystem
+
+One platform, multiple specialized services:
+
+```
+OPS (Hub)  ←─── SSO, billing, DPU, tenants
+  │
+  ├── LMS  ←─── Learning, compliance, EMON
+  ├── CMS  ←─── Content, blog, manuals
+  └── ERP  ←─── Accounting, invoicing
+```
+
+Each spoke is independently deployable but shares:
+- Single sign-on (one login for everything)
+- Tenant context (same center, same data scope)
+- DPU proof (decisions verified across services)
+
+### 4. White-Label as Infrastructure
+
+Not a CSS override. Full infrastructure-level white-label:
+
+- Custom domain (brand.co.kr → CloudFlare Worker → Cronozen)
+- Brand-specific SEO (canonical URLs, sitemap, GA4)
+- Independent auth client (host-only cookies)
+- Landing pages, branding, feature flags per partner
+
+Your customer sees `brand.co.kr`. They never know it's Cronozen underneath.
+
+### 5. AI-Native with Governance
+
+AI is useful. Unverifiable AI is dangerous.
+
+Cronozen's approach:
+1. AI makes a recommendation → recorded as `DRAFT` in DPU
+2. Human reviews → evidence level upgraded to `DOCUMENTED`
+3. Approval → sealed as `AUDIT_READY` (chain-locked)
+4. Audit → verify entire chain from genesis to latest
+
+Every AI decision has provenance. Every proof is exportable.
+
+---
+
+## Who Is This For
+
+<CardGroup cols={2}>
+  <Card title="Vertical SaaS Builders" icon="building">
+    You want to build a platform for a specific industry (rehab, education, welfare) without spending 12 months on infrastructure.
+  </Card>
+  <Card title="White-Label Partners" icon="palette">
+    You want to offer a branded version of Cronozen to your customers under your own domain.
+  </Card>
+  <Card title="Compliance-First Organizations" icon="shield-check">
+    You operate in regulated industries and need provable, tamper-evident audit trails.
+  </Card>
+  <Card title="AI-First Teams" icon="robot">
+    You want to deploy AI with governance guardrails, not just prompt engineering.
+  </Card>
+</CardGroup>
+
+---
+
+## Positioning
+
+```
+                    Custom-built
+                    (Full control, 12+ months)
+                         │
+                         │
+    Generic SaaS ────────┼──────── Cronozen
+    (Fast, limited)      │         (Platform OS, vertical-ready)
+                         │
+                         │
+                    Framework
+                    (Flexible, still months of plumbing)
+```
+
+Cronozen sits between "build everything yourself" and "use generic tools":
+- **More opinionated than a framework** — you get multi-tenancy, auth, DPU out of the box
+- **More flexible than vertical SaaS** — you can build any vertical on top
+- **More auditable than anything else** — DPU hash chains are unique in the market
+
+---
+
+## Start Building
+
+<CardGroup cols={3}>
+  <Card title="Quickstart" icon="rocket" href="/getting-started/quickstart">
+    First API call in 5 minutes
+  </Card>
+  <Card title="Build with Cronozen" icon="hammer" href="/build-with-cronozen">
+    What you can build
+  </Card>
+  <Card title="Architecture" icon="sitemap" href="/architecture/overview">
+    How it works under the hood
+  </Card>
+</CardGroup>
