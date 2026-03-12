@@ -14,7 +14,11 @@ Staging:    https://stg.cronozen.com/api
 
 ## Authentication
 
-All API calls require a JWT token in the `Authorization` header:
+The Cronozen platform supports two authentication methods:
+
+### JWT Token (Platform APIs)
+
+All platform API calls require a JWT token in the `Authorization` header:
 
 ```bash
 Authorization: Bearer <jwt-token>
@@ -22,17 +26,37 @@ Authorization: Bearer <jwt-token>
 
 See [Authentication](/auth/overview) for details on obtaining tokens.
 
+### API Key (Proof API)
+
+The Proof API uses API key authentication with scoped permissions:
+
+```bash
+Authorization: Bearer czk_live_abc123...
+```
+
+| Scope | Permissions |
+|-------|------------|
+| `proof:read` | Query events, get evidence, export reports |
+| `proof:write` | Record events, add approvals (includes read) |
+
+See [Proof API](/api-reference/proof) for details.
+
 ## API Groups
 
-| Group | Prefix | Description |
-|-------|--------|------------|
-| Auth | `/api/auth/*` | Login, session, token management |
-| Centers | `/api/centers/*` | Center CRUD and management |
-| Workspace | `/api/workspace/*` | Personal workspace operations |
-| Schedules | `/api/schedules/*` | Unified scheduling across verticals |
-| Partner | `/api/partner/*` | Partner platform management |
-| Workflows | `/api/workflows/*` | AI automation workflows |
-| Cron | `/api/cron/*` | Internal scheduled tasks |
+| Group | Prefix | Auth | Description |
+|-------|--------|------|------------|
+| Auth | `/api/auth/*` | JWT | Login, session, token management |
+| Centers | `/api/centers/*` | JWT | Center CRUD and management |
+| Workspace | `/api/workspace/*` | JWT | Personal workspace operations |
+| Schedules | `/api/schedules/*` | JWT | Unified scheduling across verticals |
+| Partner | `/api/partner/*` | JWT | Partner platform management |
+| Workflows | `/api/workflows/*` | JWT | AI automation workflows |
+| **Proof** | `/v1/decision-events/*` | **API Key** | Decision evidence recording and export |
+| Cron | `/api/cron/*` | Internal | Scheduled tasks |
+
+<Info>
+  The Proof API has a separate base URL (`proof.cronozen.com`) and uses API key authentication instead of JWT. See [Proof API Reference](/api-reference/proof).
+</Info>
 
 ## Response Format
 

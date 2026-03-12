@@ -70,11 +70,32 @@ const event = await cz.decision.record({
     model: "claude-sonnet-4-5-20250514",
     confidence: 0.92,
     mode: "RECOMMENDATION"       // RECOMMENDATION | ANALYSIS | PREDICTION | AUTONOMOUS
-  }
+  },
+  tags: ["settlement", "finance", "auto"],  // Optional: filterable tags
+  idempotencyKey: "settle-STL-5678"         // Optional: prevent duplicates
 })
 ```
 
 **Returns**: `{ id, type, actor, action, status, chainHash, createdAt }`
+
+#### Idempotency
+
+Pass `idempotencyKey` to safely retry without creating duplicates. If the same key is sent within 24 hours, the original event is returned instead of creating a new one.
+
+```typescript
+// Safe to retry — same key returns same event
+const event = await cz.decision.record({
+  type: "settlement_created",
+  actor: "cron_job",
+  action: "daily_settlement",
+  input: { date: "2026-03-12" },
+  idempotencyKey: "daily-settle-2026-03-12"
+})
+```
+
+<Info>
+  Use idempotency keys for any event triggered by webhooks, queue consumers, or cron jobs where retries are expected.
+</Info>
 
 ### `cz.decision.approve(id, params)`
 
@@ -110,14 +131,45 @@ const events = await cz.decision.list({
 })
 ```
 
+#### Filter by Tags
+
+Use `tags` to filter events by one or more tags (AND logic):
+
+```typescript
+// Events tagged with both "settlement" AND "finance"
+const events = await cz.decision.list({
+  tags: ["settlement", "finance"]
+})
+
+// Combine with other filters
+const recentRefunds = await cz.decision.list({
+  tags: ["refund"],
+  actor: "support_agent",
+  from: "2026-03-01T00:00:00Z",
+  limit: 20
+})
+```
+
 ### `cz.evidence.get(id)`
 
-Retrieve sealed evidence with hash chain verification data.
+Retrieve sealed evidence with full hash chain verification data. Returns the complete event payload including input data, AI context, approval chain, and chain integrity status.
 
 ```typescript
 const evidence = await cz.evidence.get("evt_abc123")
-// → { id, chainHash, previousHash, chainIndex, evidenceLevel, ... }
+
+console.log(evidence.chain.hash)          // "sha256:9e2b..."
+console.log(evidence.chain.previousHash)  // "sha256:7f3a..."
+console.log(evidence.chain.index)         // 42
+console.log(evidence.chain.verified)      // true
+console.log(evidence.evidenceLevel)       // "AUDIT_READY"
+console.log(evidence.approval)            // { approver, reason, approvedAt }
 ```
+
+Use `evidence.get()` for chain integrity verification and compliance checks. Use `evidence.export()` when you need a portable audit document.
+
+<Info>
+  See the full response schema in the [Proof API Reference](/api-reference/proof#get-v1evidenceid).
+</Info>
 
 ### `cz.evidence.export(id)`
 
@@ -141,6 +193,16 @@ const report = await cz.evidence.export("evt_abc123")
 
 The SDK provides 7 typed error classes for precise error handling:
 
+| Error Class | HTTP Status | When It Occurs |
+|-------------|-------------|----------------|
+| `ValidationError` | 400 | Missing required fields, invalid types |
+| `UnauthorizedError` | 401 | Invalid or missing API key |
+| `ForbiddenError` | 403 | API key lacks required scope (e.g., `proof:read` key trying to write) |
+| `NotFoundError` | 404 | Event ID does not exist |
+| `ConflictError` | 409 | Event is already sealed (cannot approve twice) |
+| `RateLimitError` | 429 | Too many requests — check `retryAfter` |
+| `ServerError` | 500 | Internal error |
+
 ```typescript
 import {
   Cronozen,
@@ -157,18 +219,48 @@ try {
   await cz.decision.approve(id, payload)
 } catch (e) {
   if (e instanceof ConflictError) {
-    // Event already approved/sealed
-    console.log("Already sealed:", e.message)
+    // 409 — Event already sealed. This is safe to ignore on retries.
+    // The approval succeeded previously; fetch the existing evidence.
+    const existing = await cz.evidence.get(id)
+    console.log("Already sealed at:", existing.sealedAt)
+  }
+  if (e instanceof ForbiddenError) {
+    // 403 — API key scope insufficient
+    // e.g., proof:read key trying to approve
+    console.error("Need proof:write scope")
   }
   if (e instanceof NotFoundError) {
-    // Event does not exist
+    // 404 — Event does not exist
   }
   if (e instanceof RateLimitError) {
-    // Back off and retry
-    const retryAfter = e.retryAfter
+    // 429 — Back off and retry
+    const retryAfter = e.retryAfter // seconds
+    await sleep(retryAfter * 1000)
   }
 }
 ```
+
+### Handling 409 Conflict (Sealed Events)
+
+The most common non-trivial error. Occurs when two approvers act simultaneously, or retry logic re-sends an already-successful approval.
+
+```typescript
+async function safeApprove(eventId: string, payload: ApprovalPayload) {
+  try {
+    return await cz.decision.approve(eventId, payload)
+  } catch (e) {
+    if (e instanceof ConflictError) {
+      // Already sealed — not an error, just return the existing evidence
+      return await cz.evidence.get(eventId)
+    }
+    throw e
+  }
+}
+```
+
+<Info>
+  Combine `idempotencyKey` on `decision.record()` with `ConflictError` handling on `decision.approve()` for fully retry-safe integrations.
+</Info>
 
 ---
 

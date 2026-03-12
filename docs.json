@@ -84,6 +84,7 @@
         "pages": [
           "api-reference/overview",
           "api-reference/authentication",
+          "api-reference/proof",
           "api-reference/tenants",
           "api-reference/workflows",
           "api-reference/errors"

@@ -1,0 +1,389 @@
+---
+title: "Proof API"
+description: "Decision evidence API — record, approve, query, and export tamper-proof decision records"
+---
+
+# Proof API
+
+Base URL: `https://proof.cronozen.com`
+
+## Authentication
+
+The Proof API uses **API Key** authentication, not JWT tokens. Include your key in the `Authorization` header:
+
+```bash
+Authorization: Bearer czk_live_abc123...
+```
+
+### API Key Scopes
+
+Each API key has one or more scopes that control access:
+
+| Scope | Permissions |
+|-------|------------|
+| `proof:read` | Query events, get evidence, export reports |
+| `proof:write` | Record events, add approvals |
+
+A key with `proof:read` cannot record or approve decisions. A key with `proof:write` can do everything.
+
+```bash
+# Read-only key — can query and export, but cannot record
+curl https://proof.cronozen.com/v1/decision-events \
+  -H "Authorization: Bearer czk_live_readonly_..."
+
+# Write key — full access
+curl -X POST https://proof.cronozen.com/v1/decision-events \
+  -H "Authorization: Bearer czk_live_full_..." \
+  -H "Content-Type: application/json" \
+  -d '{ ... }'
+```
+
+<Info>
+  API keys are hashed with SHA-256 before storage. The plaintext key is only shown once at creation time. Treat it like a password.
+</Info>
+
+<Warning>
+  Proof API keys are separate from JWT tokens used for the rest of the Cronozen platform. A JWT token will not authenticate against the Proof API, and vice versa.
+</Warning>
+
+---
+
+## Endpoints
+
+### POST /v1/decision-events
+
+Record a new decision event.
+
+**Scope required**: `proof:write`
+
+**Request:**
+
+```json
+{
+  "type": "agent_execution",
+  "actor": "support_agent",
+  "action": "refund_approved",
+  "input": {
+    "orderId": "ORD-1234",
+    "amount": 45000
+  },
+  "aiContext": {
+    "model": "gpt-4",
+    "confidence": 0.87,
+    "mode": "RECOMMENDATION"
+  },
+  "tags": ["refund", "support", "auto-approved"],
+  "idempotencyKey": "refund-ORD-1234-20260312"
+}
+```
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `type` | string | Yes | Event type identifier (e.g., `agent_execution`, `settlement_created`) |
+| `actor` | string | Yes | Who or what made the decision |
+| `action` | string | Yes | What action was taken |
+| `input` | object | Yes | Decision context (arbitrary JSON) |
+| `aiContext` | object | No | AI involvement details |
+| `aiContext.model` | string | No | Model name (e.g., `gpt-4`, `claude-sonnet-4-5-20250514`) |
+| `aiContext.confidence` | number | No | Confidence score (0–1) |
+| `aiContext.mode` | string | No | `RECOMMENDATION` \| `ANALYSIS` \| `PREDICTION` \| `AUTONOMOUS` |
+| `tags` | string[] | No | Filterable tags for categorization |
+| `idempotencyKey` | string | No | Prevents duplicate recording (see below) |
+
+**Response (201):**
+
+```json
+{
+  "success": true,
+  "data": {
+    "id": "evt_a1b2c3d4",
+    "type": "agent_execution",
+    "actor": "support_agent",
+    "action": "refund_approved",
+    "status": "RECORDED",
+    "chainHash": "sha256:7f3a...",
+    "chainIndex": 42,
+    "tags": ["refund", "support", "auto-approved"],
+    "createdAt": "2026-03-12T13:00:00Z"
+  }
+}
+```
+
+#### Idempotency
+
+Pass an `idempotencyKey` to prevent duplicate events from retries or network issues. If the same key is sent again:
+
+- **Within 24 hours**: Returns the original event (200), no duplicate created
+- **After 24 hours**: Key expires, a new event would be created
+
+```bash
+# First call — creates event
+curl -X POST .../v1/decision-events \
+  -d '{ "idempotencyKey": "settle-STL-001", ... }'
+# → 201 Created
+
+# Retry with same key — returns original
+curl -X POST .../v1/decision-events \
+  -d '{ "idempotencyKey": "settle-STL-001", ... }'
+# → 200 OK (same event, no duplicate)
+```
+
+<Info>
+  Use idempotency keys for any event that might be retried — settlement webhooks, queue consumers, or cron-triggered recordings.
+</Info>
+
+---
+
+### GET /v1/decision-events
+
+List decision events with filters.
+
+**Scope required**: `proof:read`
+
+**Query parameters:**
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `type` | string | Filter by event type |
+| `actor` | string | Filter by actor |
+| `status` | string | `RECORDED` \| `SEALED` |
+| `tags` | string | Comma-separated tag filter (AND logic) |
+| `from` | ISO 8601 | Events created after this time |
+| `to` | ISO 8601 | Events created before this time |
+| `limit` | number | Max results (default: 50, max: 200) |
+| `cursor` | string | Pagination cursor from previous response |
+
+**Example — filter by tags:**
+
+```bash
+# Events tagged with both "refund" AND "support"
+curl "https://proof.cronozen.com/v1/decision-events?tags=refund,support" \
+  -H "Authorization: Bearer czk_live_..."
+
+# Events by specific actor, last 7 days
+curl "https://proof.cronozen.com/v1/decision-events?actor=billing_agent&from=2026-03-05T00:00:00Z" \
+  -H "Authorization: Bearer czk_live_..."
+```
+
+**Response (200):**
+
+```json
+{
+  "success": true,
+  "data": {
+    "events": [
+      {
+        "id": "evt_a1b2c3d4",
+        "type": "agent_execution",
+        "actor": "support_agent",
+        "action": "refund_approved",
+        "status": "SEALED",
+        "tags": ["refund", "support"],
+        "chainHash": "sha256:7f3a...",
+        "createdAt": "2026-03-12T13:00:00Z"
+      }
+    ],
+    "nextCursor": "eyJpZCI6ImV2dF8...",
+    "hasMore": true
+  }
+}
+```
+
+---
+
+### POST /v1/decision-events/{id}/approvals
+
+Add human approval and seal the event with SHA-256.
+
+**Scope required**: `proof:write`
+
+**Request:**
+
+```json
+{
+  "approver": "team_lead",
+  "reason": "Verified against refund policy v2.1"
+}
+```
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `approver` | string | Yes | Who approved the decision |
+| `reason` | string | Yes | Why the decision was approved |
+
+**Response (200):**
+
+```json
+{
+  "success": true,
+  "data": {
+    "id": "evt_a1b2c3d4",
+    "status": "SEALED",
+    "approval": {
+      "approver": "team_lead",
+      "reason": "Verified against refund policy v2.1",
+      "approvedAt": "2026-03-12T13:05:00Z"
+    },
+    "chainHash": "sha256:9e2b...",
+    "sealedAt": "2026-03-12T13:05:00Z"
+  }
+}
+```
+
+**Error — Already sealed (409):**
+
+```json
+{
+  "success": false,
+  "error": {
+    "code": "CONFLICT",
+    "message": "Event evt_a1b2c3d4 is already sealed. Sealed events cannot be modified."
+  }
+}
+```
+
+<Warning>
+  Once an event is sealed, it is **immutable**. Attempting to approve an already-sealed event returns `409 Conflict`. This is by design — sealed events are part of the hash chain and cannot be altered without breaking chain integrity.
+</Warning>
+
+---
+
+### GET /v1/evidence/{id}
+
+Retrieve sealed evidence with full hash chain verification data.
+
+**Scope required**: `proof:read`
+
+**Response (200):**
+
+```json
+{
+  "success": true,
+  "data": {
+    "id": "evt_a1b2c3d4",
+    "type": "agent_execution",
+    "actor": "support_agent",
+    "action": "refund_approved",
+    "status": "SEALED",
+    "input": {
+      "orderId": "ORD-1234",
+      "amount": 45000
+    },
+    "aiContext": {
+      "model": "gpt-4",
+      "confidence": 0.87,
+      "mode": "RECOMMENDATION"
+    },
+    "approval": {
+      "approver": "team_lead",
+      "reason": "Verified against refund policy v2.1",
+      "approvedAt": "2026-03-12T13:05:00Z"
+    },
+    "tags": ["refund", "support", "auto-approved"],
+    "chain": {
+      "hash": "sha256:9e2b...",
+      "previousHash": "sha256:7f3a...",
+      "index": 42,
+      "verified": true
+    },
+    "evidenceLevel": "AUDIT_READY",
+    "createdAt": "2026-03-12T13:00:00Z",
+    "sealedAt": "2026-03-12T13:05:00Z"
+  }
+}
+```
+
+| Field | Description |
+|-------|-------------|
+| `chain.hash` | SHA-256 hash of this event (content + previousHash + timestamp) |
+| `chain.previousHash` | Hash of the preceding event in the chain |
+| `chain.index` | Position in the sequential chain |
+| `chain.verified` | Whether chain integrity is valid at this point |
+| `evidenceLevel` | `DRAFT` → `DOCUMENTED` → `AUDIT_READY` |
+
+<Info>
+  The `evidence.get()` endpoint returns the full event payload including input data, AI context, and chain verification. Use this for compliance checks and chain integrity verification. Use `evidence.export()` when you need a portable audit document.
+</Info>
+
+---
+
+### GET /v1/evidence/{id}/export
+
+Export a sealed event as a JSON-LD v2 audit document.
+
+**Scope required**: `proof:read`
+
+**Response (200):**
+
+```json
+{
+  "@context": "https://schema.cronozen.com/decision-proof/v2",
+  "@type": "DecisionProof",
+  "id": "evt_a1b2c3d4",
+  "decision": {
+    "type": "agent_execution",
+    "actor": "support_agent",
+    "action": "refund_approved",
+    "input": { "orderId": "ORD-1234", "amount": 45000 },
+    "aiContext": { "model": "gpt-4", "confidence": 0.87 }
+  },
+  "approval": {
+    "approver": "team_lead",
+    "reason": "Verified against refund policy v2.1",
+    "approvedAt": "2026-03-12T13:05:00Z"
+  },
+  "evidence": {
+    "level": "AUDIT_READY",
+    "chainHash": "sha256:9e2b...",
+    "previousHash": "sha256:7f3a...",
+    "chainIndex": 42,
+    "chainIntegrity": "VERIFIED"
+  },
+  "metadata": {
+    "createdAt": "2026-03-12T13:00:00Z",
+    "sealedAt": "2026-03-12T13:05:00Z",
+    "exportedAt": "2026-03-12T14:00:00Z"
+  }
+}
+```
+
+This document is self-contained and can be stored, shared, or submitted to auditors independently of the Cronozen platform.
+
+---
+
+## Error Reference
+
+| Status | Code | Description | Common Cause |
+|--------|------|-------------|--------------|
+| 400 | `VALIDATION_ERROR` | Invalid request body | Missing required fields, invalid types |
+| 401 | `UNAUTHORIZED` | Invalid or missing API key | Wrong key, expired key, missing header |
+| 403 | `FORBIDDEN` | Insufficient scope | `proof:read` key trying to write |
+| 404 | `NOT_FOUND` | Event not found | Invalid event ID |
+| 409 | `CONFLICT` | Event already sealed | Attempting to approve a sealed event |
+| 429 | `RATE_LIMITED` | Too many requests | Retry after `Retry-After` header value |
+| 500 | `SERVER_ERROR` | Internal error | Contact support |
+
+### 409 Conflict — Sealed Event
+
+The most common non-trivial error. Occurs when calling `POST /v1/decision-events/{id}/approvals` on an event that has already been approved and sealed.
+
+**Why this happens:**
+- Concurrent approval attempts (two approvers clicking simultaneously)
+- Retry logic re-sending an already-successful approval
+- Webhook handler firing multiple times
+
+**How to handle:**
+
+```typescript
+try {
+  await cz.decision.approve(eventId, payload)
+} catch (e) {
+  if (e instanceof ConflictError) {
+    // Already sealed — this is fine, the approval succeeded previously
+    const existing = await cz.evidence.get(eventId)
+    console.log("Already sealed at:", existing.sealedAt)
+  }
+}
+```
+
+Use `idempotencyKey` on the original `decision.record()` call to prevent duplicate events upstream.
