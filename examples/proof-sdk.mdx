@@ -331,7 +331,7 @@ Event Sealed          →  Webhook fires to your endpoint
 ```typescript
 const cz = new Cronozen({
   apiKey: process.env.CZ_KEY,
-  baseUrl: "https://proof.cronozen.com",  // Optional: custom endpoint
+  baseUrl: "https://cronozen.com/api",  // Optional: custom endpoint
   timeout: 5000,                           // Optional: request timeout (ms)
 })
 ```
@@ -339,7 +339,7 @@ const cz = new Cronozen({
 | Option | Default | Description |
 |--------|---------|-------------|
 | `apiKey` | — | API key (required) |
-| `baseUrl` | `https://proof.cronozen.com` | API endpoint |
+| `baseUrl` | `https://cronozen.com/api` | API endpoint |
 | `timeout` | `10000` | Request timeout in ms |
 
 ---

@@ -1,264 +1,186 @@
 ---
 title: "Proof Pipeline"
-description: "5-stage evidence pipeline — from decision to audit-ready proof"
+description: "How decisions become tamper-proof evidence — from recording to audit-ready export"
 ---
 
 # Proof Pipeline
 
 ## The Problem
 
-In public services, too many systems can't answer: **"Was this decision lawful?"**
-
-When welfare agencies approve benefits, rehab centers record therapy sessions, and local markets settle coupons — every decision must be auditable. But reality differs:
+AI agents and workflows execute decisions automatically — but those decisions are not recorded in a verifiable, auditable way.
 
 | Problem | Consequence |
 |---------|------------|
 | Decision rationale scattered across logs | Cannot reconstruct during audit |
-| Policy versions not recorded | Cannot verify "at-the-time" legality |
 | Approval flows unstructured | Unclear responsibility |
 | No data integrity guarantee | Post-hoc tampering undetectable |
 | AI involvement opaque | Cannot comply with regulations |
 
-Audit response is always reactive. When issues arise, teams dig through logs, query databases, and rely on staff memory. This takes weeks with low-confidence results.
+Audit response is always reactive. When issues arise, teams dig through logs, query databases, and rely on staff memory.
 
 Cronozen solves this at the design level: **every decision generates its proof at the moment of creation.**
 
-## The 5 Stages
+## v1 Pipeline: Record → Approve → Seal → Export
 
-The Proof Pipeline consists of 5 sequential stages. If any stage fails, DPU creation is rejected — and the rejection itself is recorded.
+The current Proof Pipeline consists of 4 stages:
 
 ```
-┌─────────────────────────────────────────────────────────────┐
-│                    PROOF PIPELINE                            │
-│                                                              │
-│  ┌──────────┐   ┌──────────┐   ┌──────────┐                │
-│  │ Stage 1  │──▶│ Stage 2  │──▶│ Stage 3  │                │
-│  │ Evidence │   │ Policy   │   │ Guard    │                │
-│  │Collection│   │ Matching │   │Validation│                │
-│  └──────────┘   └──────────┘   └────┬─────┘                │
-│                                      │                      │
-│                                      ▼                      │
-│                               ┌──────────┐   ┌──────────┐  │
-│                               │ Stage 4  │──▶│ Stage 5  │  │
-│                               │Hash Chain│   │  Audit   │  │
-│                               │ Sealing  │   │  Ready   │  │
-│                               └──────────┘   └──────────┘  │
-│                                                              │
-└─────────────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────┐
+│                    PROOF PIPELINE v1                       │
+│                                                            │
+│  ┌──────────┐   ┌──────────┐   ┌──────────┐   ┌────────┐│
+│  │ Stage 1  │──▶│ Stage 2  │──▶│ Stage 3  │──▶│Stage 4 ││
+│  │ Record   │   │ Approve  │   │Hash Chain│   │ Export ││
+│  │          │   │          │   │ Sealing  │   │        ││
+│  └──────────┘   └──────────┘   └──────────┘   └────────┘│
+│                                                            │
+└──────────────────────────────────────────────────────────┘
       ↑                                            │
-  Input Sources                              DPU Output
-  (User / AI /                          (Sealed, Chained,
-   Voice / System)                        Audit-Ready)
+  API Call                                   JSON-LD v2
+  (SDK / cURL)                            Audit Document
 ```
 
-## Stage 1 — Evidence Collection
+### Stage 1 — Record
 
-All proof starts with evidence. This stage collects and structures data from multiple sources.
+A decision event is created via API with structured metadata.
 
-- **Input sources**: User input, system events, AI analysis, voice input
-- **6W extraction**: Automatically extract Who, What, When, Where, Why, How from all evidence
-- **Data sensitivity**: Classify as `PUBLIC`, `INTERNAL`, `PII`, `PHI`
-- **Voice input**: Audio hash (SHA-256) → STT transcription → confidence score recording
-
-### 6W Structure
-
-The 6W extraction is core to the Proof Pipeline. Whether it's a welfare case record, a pharmacy exchange, or a coupon transaction — everything normalizes to the same 6W structure. This enables **cross-domain unified auditing**.
-
-```
-┌───────────────────────────────────────┐
-│  Who   │ Actor name, role, ID         │
-│  What  │ Action, description, category│
-│  When  │ Timestamp, timezone          │
-│  Where │ Location, system, context    │
-│  Why   │ Reason, policy ref, evidence │
-│  How   │ Method, tool, AI involvement │
-└───────────────────────────────────────┘
+```typescript
+await cz.decision.record({
+  type: "settlement_created",
+  actor: "finance_bot",
+  action: "approve_settlement",
+  input: { settlementId: "STL-5678", amount: 150000 },
+  aiContext: { model: "gpt-4", confidence: 0.92 },
+  tags: ["settlement", "finance"]
+})
 ```
 
-## Stage 2 — Policy Matching
+Each event captures:
+- **Who** made the decision (actor)
+- **What** action was taken
+- **Why** (input context, AI reasoning)
+- **How** (AI model, confidence, mode)
 
-Once evidence is collected, it's matched against active policies for the domain.
+### Stage 2 — Approve
 
-- **Policy scope**: Global → Country → Region → Center (4-level hierarchy)
-- **Temporal validity**: `validFrom` / `validUntil` time range verification
-- **Conflict resolution**: Multiple policies in same domain resolved by priority score
-- **Policy Snapshot**: Captured at this point and permanently preserved in the DPU
+Human approval seals the event. This is the governance checkpoint.
 
-<Info>
-  The matched policy's snapshot is frozen at this stage. Even if the policy changes later, the DPU preserves the "policy at time of decision" forever. Six months later, an auditor can reproduce the exact policy version that was applied.
-</Info>
-
-## Stage 3 — Guard Validation
-
-The gateway of the Proof Pipeline. 5 independent guards validate sequentially — **any failure rejects DPU creation**.
-
-```
-Guard 1: Evidence Level Guard
-┌─────────────────────────────────────────────────┐
-│  DRAFT ──────▶ DOCUMENTED ──────▶ AUDIT_READY   │
-│                                                  │
-│  Policy-required minimum Evidence Level check    │
-│  PHI data → AUDIT_READY enforced                 │
-└─────────────────────────────────────────────────┘
-
-Guard 2: Human Review Guard
-┌─────────────────────────────────────────────────┐
-│  Enforces human review for sensitive decisions   │
-│  Reviewer ID + role + approval time required     │
-│  Reviewer role must match policy-defined role    │
-└─────────────────────────────────────────────────┘
-
-Guard 3: Risk Threshold Guard
-┌─────────────────────────────────────────────────┐
-│  LOW ─── MEDIUM ─── HIGH ─── CRITICAL           │
-│  HIGH/CRITICAL → AI AUTONOMOUS mode blocked      │
-│  CRITICAL → minimum 2-person approval enforced   │
-└─────────────────────────────────────────────────┘
-
-Guard 4: Dual Approval Guard
-┌─────────────────────────────────────────────────┐
-│  When policy requires 2+ approvers:              │
-│  First + second approver both required           │
-│  Self-approval blocked                           │
-└─────────────────────────────────────────────────┘
-
-Guard 5: Compliance Logging Guard
-┌─────────────────────────────────────────────────┐
-│  All guard failures auto-logged to audit         │
-│  Failure reason, actor, time, policy code        │
-│  DENIED logs are undeletable                     │
-│  → Guard bypass attempts become evidence         │
-└─────────────────────────────────────────────────┘
+```typescript
+await cz.decision.approve(event.id, {
+  approver: "center_director",
+  reason: "Verified against settlement policy v2.1"
+})
 ```
 
-<Warning>
-  **The existence of a DPU proves all 5 guards were passed.** Auditors can verify policy compliance simply by confirming the DPU exists.
-</Warning>
+Once approved, the event transitions from `RECORDED` → `SEALED`.
 
-## Stage 4 — Hash Chain Sealing
+### Stage 3 — Hash Chain Sealing
 
-All guards passed — evidence is now linked to the hash chain and sealed.
+The approved event is linked to the previous event's hash, forming an immutable chain.
 
 ```
-[Genesis DPU]     [DPU #1]          [DPU #2]
+[Genesis]         [Event #1]        [Event #2]
 ┌───────────┐    ┌───────────┐    ┌───────────┐
 │ index: 0  │    │ index: 1  │    │ index: 2  │
 │ prevHash: │    │ prevHash: │    │ prevHash: │
 │  GENESIS  │◀───│  hash_0   │◀───│  hash_1   │
 │ chainHash:│    │ chainHash:│    │ chainHash:│
 │  hash_0   │    │  hash_1   │    │  hash_2   │
-│ policy:   │    │ policy:   │    │ policy:   │
-│ snapshot_0│    │ snapshot_1│    │ snapshot_2│
 └───────────┘    └───────────┘    └───────────┘
 
 chainHash = SHA-256(content + previousHash + timestamp)
 ```
 
-Key operations:
-- **computeChainHash()**: Content + previous hash + timestamp → SHA-256 (after JSON key sorting canonicalization)
-- **generatePolicyHash()**: Policy version, settings, sensitivity level → separate hash
-- **createDPUEnvelope()**: Package all evidence, policy snapshot, chain link into tamper-evident unit
+Key properties:
+- **computeChainHash()**: Content + previous hash + timestamp → SHA-256 (JSON key sorting canonicalization)
+- **Tamper detection**: Modifying any event breaks all subsequent hashes — immediately detectable
+- **Per-domain chains**: Each domain operates independently, concurrent access uses serializable transactions
 
-Hash chains operate independently per domain. Welfare chain and pharmacy chain don't interfere — concurrent access uses serializable transactions to prevent index collisions.
+### Stage 4 — Export
 
-## Stage 5 — Audit-Ready Output
+Sealed evidence is exportable as a **JSON-LD v2** audit document.
 
-Sealed DPU is stored immediately in audit-ready state.
+```typescript
+const report = await cz.evidence.export(event.id)
+```
 
-- **Audit status tracking**: `PENDING` → `PASSED` / `DENIED` / `FLAGGED`
-- **Responsibility Graph**: Tracks all actors (human + AI) involved in the decision
-- **verifyHashChain()**: Verify entire chain integrity at any time
-- **verifyDPUWithOriginalPolicy()**: Compare DPU's policy snapshot with current policy
+The export includes:
+- Structured decision record (actor, action, input, AI context)
+- Approval chain with timestamps
+- SHA-256 hash chain link and integrity status
+- Evidence level (`DRAFT` → `DOCUMENTED` → `AUDIT_READY`)
 
-## Real-World Examples
+```json
+{
+  "@context": "https://schema.cronozen.com/decision-proof/v2",
+  "@type": "DecisionProof",
+  "decision": { "type": "...", "actor": "...", "action": "..." },
+  "approval": { "approver": "...", "approvedAt": "..." },
+  "evidence": { "chainHash": "sha256:...", "chainIntegrity": "VERIFIED" }
+}
+```
 
-### Rehabilitation — Voucher Approval to Therapy Record
+This document is self-contained and can be submitted to auditors independently of the Cronozen platform.
+
+## Real-World Example: Settlement Flow
 
 ```
-Voucher approval request
+Settlement created (finance_bot)
      │
      ▼
-[DPU #0] Voucher Approval
-├─ 6W: Who=Therapist, What=VoucherApproval, Why=TreatmentPlan
-├─ Evidence Level: DOCUMENTED
-├─ Guard: Human Review passed (therapist approval)
-├─ Guard: Risk=MEDIUM (medical decision)
+[Event #0] Settlement Created
+├─ Actor: finance_bot
+├─ Action: create_settlement
+├─ Input: { amount: 150000, settlementId: "STL-5678" }
+├─ AI Context: { model: "gpt-4", confidence: 0.92 }
+├─ Status: RECORDED
 └─ Chain: hash_0 (Genesis)
      │
-     ▼
-[DPU #1] Therapy Session Record
-├─ 6W: Who=Therapist, What=SessionCompleted, How=VoiceInput
-├─ Voice: transcript + confidence 0.94
-├─ Audio Hash: SHA-256(original audio)
-├─ Evidence Level: DOCUMENTED → AUDIT_READY
-└─ Chain: hash_1 ← hash_0
-     │
-     ▼
-[DPU #2] Progress Evaluation
-├─ 6W: Who=Supervisor, What=ProgressEval
-├─ Guard: Dual Approval (therapist + supervisor)
+     ▼  (Director reviews and approves)
+[Event #0] → SEALED
+├─ Approval: { approver: "center_director", reason: "Policy v2.1" }
+├─ Chain Hash: sha256:9e2b...
 ├─ Evidence Level: AUDIT_READY
-└─ Chain: hash_2 ← hash_1
+└─ Immutable — part of hash chain
 
-→ 3 DPUs linked in one hash chain
-→ Entire voucher lifecycle is auditable
-```
-
-### Welfare — Benefit Application to Payment
-
-```
-Benefit application received
      │
-     ▼
-[DPU #0] Case Registration (CASE_REGISTERED)
-├─ 6W: Who=SocialWorker, What=CaseRegistration
-├─ DataSensitivity: PII
-├─ Evidence Level: DRAFT
-└─ Chain: hash_0 (Genesis)
-     │
-     ▼
-[DPU #1] Eligibility Assessment (ASSESSMENT_COMPLETED)
-├─ 6W: Who=SocialWorker, What=Eligibility, How=AI-assisted
-├─ AI Mode: RECOMMENDATION (AI recommends, human decides)
-├─ Guard: Human Review passed
-├─ Evidence Level: DOCUMENTED
-└─ Chain: hash_1 ← hash_0
-     │
-     ▼
-[DPU #2] Payment Decision (CONTRACT_SIGNED)
-├─ 6W: Who=TeamLead+Worker, What=PaymentApproval
-├─ Guard: Dual Approval passed
-├─ Evidence Level: AUDIT_READY
-├─ Policy Snapshot: Benefit policy v2.3 recorded
-└─ Chain: hash_2 ← hash_1
-
-→ AI assisted but human made final judgment
-→ AI involvement scope vs human decision scope clearly separated
+     ▼  (Audit request)
+[Export] → JSON-LD v2 document
+├─ Decision + Approval + Chain integrity
+└─ Portable, self-contained audit evidence
 ```
-
-## Cross-Domain Patterns
-
-| Pattern | Description |
-|---------|------------|
-| Chain linking | All domains use hash chains to guarantee ordering |
-| Evidence progression | DRAFT → DOCUMENTED → AUDIT_READY maturation |
-| 6W normalization | Different domains, same 6W structure = unified audit |
-| Policy snapshot | At-the-time policy permanently preserved in DPU |
-| Non-blocking | DPU creation failure doesn't block business flow |
 
 ## What This Achieves
 
-Audit response shifts from **investigation** to **lookup**. If a DPU exists, the policy was followed. If a DPU was rejected, the rejection reason is recorded. No log reconstruction or staff interviews needed.
+Audit response shifts from **investigation** to **lookup**. If a sealed event exists, the decision was recorded and approved. The hash chain guarantees no tampering occurred.
 
 | Guarantee | Mechanism |
 |-----------|----------|
 | Integrity | SHA-256 Hash Chain — mid-chain tampering breaks all subsequent hashes |
-| Temporal accuracy | Policy Snapshot — at-the-time policy sealed in DPU |
-| Responsibility | Responsibility Graph — human/AI roles explicitly separated |
-| Evidence maturity | 3-level Evidence Level progression |
-| Bypass prevention | Guard failures permanently recorded as DENIED |
-| Domain independence | 6W normalization — rehab, welfare, commerce all auditable in same structure |
+| Accountability | Approval chain — who approved, when, why |
+| Non-blocking | Proof failure never blocks business flow (`fireProof()` pattern) |
+| Idempotency | Duplicate-safe recording via `idempotencyKey` |
 
 <Info>
   This is **compliance-by-design** — not reactive compliance, but compliance built into the architecture itself.
 </Info>
+
+---
+
+## Roadmap: v2+ Planned Capabilities
+
+The following features are designed but **not yet implemented** in v1:
+
+| Feature | Description | Target |
+|---------|-------------|--------|
+| **6W Auto-extraction** | Automatic Who/What/When/Where/Why/How extraction from evidence | v2 |
+| **Voice Input** | Audio hash (SHA-256) → STT transcription → confidence score | v2 |
+| **Policy Snapshot** | Point-in-time policy version capture and comparison | v2 |
+| **5 Governance Guards** | Evidence level, human review, risk threshold, dual approval, compliance logging | v2 |
+| **Responsibility Graph** | Track all actors (human + AI) involved in a decision | v2 |
+| **Cross-domain 6W normalization** | Unified audit structure across verticals | v3 |
+| **Multi-approval policies** | Route approvals by amount, risk level, or decision type | v2 |
+
+<Note>
+  The DPU Engine page describes the full architectural vision including governance guards. v1 implements the core: record → approve → hash chain seal → export.
+</Note>

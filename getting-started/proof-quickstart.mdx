@@ -72,7 +72,7 @@ If anyone modifies event #N after sealing, the hash chain breaks at #N+1 — **i
 
 ```bash
 # Record a decision
-curl -X POST https://proof.cronozen.com/v1/decision-events \
+curl -X POST https://cronozen.com/api/v1/decision-events \
   -H "Authorization: Bearer YOUR_API_KEY" \
   -H "Content-Type: application/json" \
   -d '{
@@ -84,7 +84,7 @@ curl -X POST https://proof.cronozen.com/v1/decision-events \
   }'
 
 # Approve
-curl -X POST https://proof.cronozen.com/v1/decision-events/{id}/approvals \
+curl -X POST https://cronozen.com/api/v1/decision-events/{id}/approvals \
   -H "Authorization: Bearer YOUR_API_KEY" \
   -H "Content-Type: application/json" \
   -d '{
@@ -93,7 +93,7 @@ curl -X POST https://proof.cronozen.com/v1/decision-events/{id}/approvals \
   }'
 
 # Export evidence
-curl https://proof.cronozen.com/v1/evidence/{id}/export \
+curl https://cronozen.com/api/v1/evidence/{id}/export \
   -H "Authorization: Bearer YOUR_API_KEY"
 ```
 

@@ -102,7 +102,11 @@ DPU Core has **zero external dependencies**. This is intentional.
   Core has no external dependencies because proof reliability depends on computational determinism. Same input must produce same output everywhere, and library version changes must never alter hash results.
 </Info>
 
-### DPU Pro — Governance Layer
+### DPU Pro — Governance Layer *(v2+)*
+
+<Note>
+  The governance guard system is designed and the `@cronozen/dpu-pro` package structure exists, but the 5-guard pipeline is not yet active in v1. v1 uses single-approval sealing via the Proof API.
+</Note>
 
 5 Governance Guards execute sequentially. **If any guard fails, the DPU is not created.**
 
@@ -186,12 +190,22 @@ AI suggestion    Review in progress   All guards passed
 Hash generated   Reviewer assigned    Hash chain sealed
 ```
 
+## Version Scope
+
+<Note>
+  **v1 (Current)**: Record → Approve → Hash Chain Seal → Export. Single approval policy, API key auth, SDK (`npm install cronozen`).
+
+  **v2+ (Planned)**: 5 governance guards, policy snapshot, 6W auto-extraction, voice input, responsibility graph, dual approval, risk threshold guards. See [Proof Pipeline Roadmap](/architecture/proof-pipeline#roadmap-v2-planned-capabilities).
+</Note>
+
+The DPU architecture below describes the **full vision**. Sections marked with *(v2+)* are designed but not yet available in v1.
+
 ## Packages
 
 | Package | Purpose | Dependencies |
 |---------|---------|-------------|
 | `@cronozen/dpu-core` | Domain-independent engine | Zero (pure computation) |
-| `@cronozen/dpu-pro` | Governance + compliance | dpu-core only |
+| `@cronozen/dpu-pro` | Governance + compliance *(v2+)* | dpu-core only |
 | `dpu-connector-prisma` | PostgreSQL adapter | Prisma |
 
 ## Export Format

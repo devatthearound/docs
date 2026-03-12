@@ -5,7 +5,7 @@ description: "Decision evidence API — record, approve, query, and export tampe
 
 # Proof API
 
-Base URL: `https://proof.cronozen.com`
+Base URL: `https://cronozen.com/api`
 
 ## Authentication
 
@@ -28,11 +28,11 @@ A key with `proof:read` cannot record or approve decisions. A key with `proof:wr
 
 ```bash
 # Read-only key — can query and export, but cannot record
-curl https://proof.cronozen.com/v1/decision-events \
+curl https://cronozen.com/api/v1/decision-events \
   -H "Authorization: Bearer czk_live_readonly_..."
 
 # Write key — full access
-curl -X POST https://proof.cronozen.com/v1/decision-events \
+curl -X POST https://cronozen.com/api/v1/decision-events \
   -H "Authorization: Bearer czk_live_full_..." \
   -H "Content-Type: application/json" \
   -d '{ ... }'
@@ -157,11 +157,11 @@ List decision events with filters.
 
 ```bash
 # Events tagged with both "refund" AND "support"
-curl "https://proof.cronozen.com/v1/decision-events?tags=refund,support" \
+curl "https://cronozen.com/api/v1/decision-events?tags=refund,support" \
   -H "Authorization: Bearer czk_live_..."
 
 # Events by specific actor, last 7 days
-curl "https://proof.cronozen.com/v1/decision-events?actor=billing_agent&from=2026-03-05T00:00:00Z" \
+curl "https://cronozen.com/api/v1/decision-events?actor=billing_agent&from=2026-03-05T00:00:00Z" \
   -H "Authorization: Bearer czk_live_..."
 ```
 
