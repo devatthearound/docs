@@ -22,14 +22,17 @@ Hub-and-spoke ecosystem:
 - Multi-tenant SaaS with row-level center/workspace isolation (200+ tables)
 - Actor-based auth: ADMIN, INSTRUCTOR, PARENT, CHILD (JWT + SSO via auth.cronozen.com)
 - DPU (Decision Proof Unit): SHA-256 hash chain, 5-level governance, JSON-LD v2 export
+- **Cronozen Proof**: SDK-first decision evidence API (`npm install cronozen`, 11.1KB, zero deps)
 - White-label: custom domain, branding, CloudFlare Worker proxy, partner platform
 - LMS: HRD-Net compliance, EMON integration, anti-fraud (FDS), QR attendance with DPU proof
 - AI automation: workflow engine, pgvector embeddings, decision provenance
+- Guardian Safety: real-time child location, SOS alerts, geofencing for rehab services
 
 ## Documentation Pages
 
 - [Introduction](https://docs.cronozen.com/introduction): Platform overview and getting started
 - [Quickstart](https://docs.cronozen.com/getting-started/quickstart): First API call in 5 minutes
+- [Proof Quickstart](https://docs.cronozen.com/getting-started/proof-quickstart): Add AI decision evidence in 3 steps
 - [Core Concepts](https://docs.cronozen.com/getting-started/concepts): Actors, tenants, membership, DPU
 - [Architecture Overview](https://docs.cronozen.com/architecture/overview): System design, tech stack, deployment
 - [Multi-Tenant](https://docs.cronozen.com/architecture/multi-tenant): Row-level isolation, scoped Prisma
@@ -49,6 +52,7 @@ Hub-and-spoke ecosystem:
 - [Auth API](https://docs.cronozen.com/api-reference/authentication): Login, /me, switch-center
 - [Tenant API](https://docs.cronozen.com/api-reference/tenants): Centers, partner management
 - [Workflow API](https://docs.cronozen.com/api-reference/workflows): Workflow execution, DPU integration
+- [Proof SDK](https://docs.cronozen.com/examples/proof-sdk): Decision evidence SDK reference (record, approve, export)
 
 ## Tech Stack
 

@@ -1,0 +1,264 @@
+---
+title: "Proof SDK"
+description: "Record, approve, and export tamper-proof evidence for AI decisions — in 3 lines of code"
+---
+
+# Proof SDK
+
+The Cronozen Proof SDK provides a lightweight, type-safe client for the Decision Proof API. Record AI decisions, add human approvals, and export audit-ready evidence.
+
+<Info>
+  **Package**: `cronozen` · **Size**: 11.1KB · **Dependencies**: Zero · **Formats**: CJS + ESM + TypeScript
+</Info>
+
+---
+
+## Installation
+
+```bash
+npm install cronozen
+```
+
+---
+
+## Quick Start
+
+```typescript
+import { Cronozen } from "cronozen"
+
+const cz = new Cronozen({ apiKey: process.env.CZ_KEY })
+
+// 1. Record a decision
+const event = await cz.decision.record({
+  type: "agent_execution",
+  actor: "support_agent",
+  action: "refund_approved",
+  input: { orderId: "ORD-1234", amount: 45000 },
+  aiContext: { model: "gpt-4", confidence: 0.87 }
+})
+
+// 2. Add human approval (seals with SHA-256)
+await cz.decision.approve(event.id, {
+  approver: "team_lead",
+  reason: "Policy-compliant refund under $100K threshold"
+})
+
+// 3. Export audit-ready evidence
+const report = await cz.evidence.export(event.id)
+// → JSON-LD v2 document at schema.cronozen.com/decision-proof/v2
+```
+
+---
+
+## API Reference
+
+### `cz.decision.record(params)`
+
+Create a new decision event with structured metadata.
+
+```typescript
+const event = await cz.decision.record({
+  type: "settlement_created",     // Event type identifier
+  actor: "finance_bot",           // Who/what made the decision
+  action: "approve_settlement",   // What action was taken
+  input: {                        // Decision context (any JSON)
+    settlementId: "STL-5678",
+    amount: 150000,
+    currency: "KRW"
+  },
+  aiContext: {                    // Optional: AI involvement details
+    model: "claude-sonnet-4-5-20250514",
+    confidence: 0.92,
+    mode: "RECOMMENDATION"       // RECOMMENDATION | ANALYSIS | PREDICTION | AUTONOMOUS
+  }
+})
+```
+
+**Returns**: `{ id, type, actor, action, status, chainHash, createdAt }`
+
+### `cz.decision.approve(id, params)`
+
+Add human approval and seal the decision with SHA-256.
+
+```typescript
+await cz.decision.approve(event.id, {
+  approver: "center_director",
+  reason: "Reviewed and approved per settlement policy v2.1"
+})
+```
+
+Once approved, the event is **sealed** — its hash becomes part of the immutable chain.
+
+### `cz.decision.get(id)`
+
+Retrieve a single decision event with full metadata.
+
+```typescript
+const event = await cz.decision.get("evt_abc123")
+// → { id, type, actor, action, status, approval, chainHash, ... }
+```
+
+### `cz.decision.list(params?)`
+
+List decision events with optional filters.
+
+```typescript
+const events = await cz.decision.list({
+  type: "settlement_created",
+  status: "SEALED",
+  limit: 50
+})
+```
+
+### `cz.evidence.get(id)`
+
+Retrieve sealed evidence with hash chain verification data.
+
+```typescript
+const evidence = await cz.evidence.get("evt_abc123")
+// → { id, chainHash, previousHash, chainIndex, evidenceLevel, ... }
+```
+
+### `cz.evidence.export(id)`
+
+Export audit-ready document in JSON-LD v2 format.
+
+```typescript
+const report = await cz.evidence.export("evt_abc123")
+// → JSON-LD document conforming to schema.cronozen.com/decision-proof/v2
+```
+
+**Export includes**:
+- Structured decision record (actor, action, input, AI context)
+- Policy snapshot at time of decision
+- Approval chain with timestamps
+- SHA-256 hash chain link
+- Evidence level and chain integrity status
+
+---
+
+## Error Handling
+
+The SDK provides 7 typed error classes for precise error handling:
+
+```typescript
+import {
+  Cronozen,
+  NotFoundError,
+  ConflictError,
+  UnauthorizedError,
+  ForbiddenError,
+  ValidationError,
+  RateLimitError,
+  ServerError
+} from "cronozen"
+
+try {
+  await cz.decision.approve(id, payload)
+} catch (e) {
+  if (e instanceof ConflictError) {
+    // Event already approved/sealed
+    console.log("Already sealed:", e.message)
+  }
+  if (e instanceof NotFoundError) {
+    // Event does not exist
+  }
+  if (e instanceof RateLimitError) {
+    // Back off and retry
+    const retryAfter = e.retryAfter
+  }
+}
+```
+
+---
+
+## Non-Blocking Integration
+
+For production use, wrap Proof calls so they never block your business logic:
+
+```typescript
+async function fireProof(fn: () => Promise<void>) {
+  try {
+    await fn()
+  } catch (e) {
+    // Log but don't throw — Proof failure must not break business flow
+    console.warn("[Proof] Recording failed:", e)
+  }
+}
+
+// In your settlement handler:
+const settlement = await createSettlement(data)
+
+// Non-blocking evidence recording
+await fireProof(() =>
+  cz.decision.record({
+    type: "settlement_created",
+    actor: actorId,
+    action: "create",
+    input: { settlementId: settlement.id, amount: settlement.amount }
+  })
+)
+```
+
+<Warning>
+  If `CZ_KEY` environment variable is not set, the SDK client silently disables itself. This means you can add Proof integration to your codebase and activate it per-environment by simply setting the key.
+</Warning>
+
+---
+
+## Integration Patterns
+
+### Settlement Flow
+
+```
+Settlement Created    →  cz.decision.record()   →  Event recorded
+Director Approves     →  cz.decision.approve()  →  SHA-256 sealed
+Audit Request         →  cz.evidence.export()   →  JSON-LD report
+```
+
+### AI Agent Workflow
+
+```
+Agent Decides         →  cz.decision.record({ aiContext })
+Human Reviews         →  cz.decision.approve()
+Compliance Check      →  cz.evidence.get() + verify chain
+External Audit        →  cz.evidence.export()
+```
+
+### Webhook (Coming Soon)
+
+```
+Event Sealed          →  Webhook fires to your endpoint
+                      →  { event, chainHash, approval }
+```
+
+---
+
+## Configuration
+
+```typescript
+const cz = new Cronozen({
+  apiKey: process.env.CZ_KEY,
+  baseUrl: "https://proof.cronozen.com",  // Optional: custom endpoint
+  timeout: 5000,                           // Optional: request timeout (ms)
+})
+```
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `apiKey` | — | API key (required) |
+| `baseUrl` | `https://proof.cronozen.com` | API endpoint |
+| `timeout` | `10000` | Request timeout in ms |
+
+---
+
+## What's Next
+
+- **Proof Admin Console** — Visual decision timeline and audit dashboard
+- **Multi-approval policies** — Route approvals by amount, risk level, or decision type
+- **Webhook notifications** — Real-time alerts on specific event types
+- **Batch recording** — Record multiple decisions in a single API call
+
+<Card title="Get API Key" icon="key" href="https://cronozen.com/auth">
+  Sign up and generate your Proof API key to get started.
+</Card>

@@ -24,6 +24,7 @@
           "why-cronozen",
           "build-with-cronozen",
           "getting-started/quickstart",
+          "getting-started/proof-quickstart",
           "getting-started/concepts",
           "ai-context"
         ]
@@ -74,7 +75,8 @@
         "pages": [
           "examples/curl-quickstart",
           "examples/typescript-sdk",
-          "examples/python-sdk"
+          "examples/python-sdk",
+          "examples/proof-sdk"
         ]
       },
       {

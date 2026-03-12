@@ -1,0 +1,117 @@
+---
+title: "Proof Quickstart"
+description: "Add tamper-proof evidence to your AI decisions in under 5 minutes"
+---
+
+# Proof Quickstart
+
+Add decision evidence to your application in 3 steps.
+
+---
+
+## Step 1: Install
+
+```bash
+npm install cronozen
+```
+
+## Step 2: Record a Decision
+
+```typescript
+import { Cronozen } from "cronozen"
+
+const cz = new Cronozen({ apiKey: process.env.CZ_KEY })
+
+const event = await cz.decision.record({
+  type: "agent_execution",
+  actor: "billing_agent",
+  action: "invoice_approved",
+  input: { invoiceId: "INV-001", amount: 280000 },
+  aiContext: { model: "gpt-4", confidence: 0.91 }
+})
+
+console.log(`Recorded: ${event.id}`)
+console.log(`Chain hash: ${event.chainHash}`)
+```
+
+## Step 3: Approve and Seal
+
+```typescript
+await cz.decision.approve(event.id, {
+  approver: "finance_lead",
+  reason: "Verified against contract terms"
+})
+
+// Export audit-ready report
+const report = await cz.evidence.export(event.id)
+console.log(report) // JSON-LD v2
+```
+
+---
+
+## What Just Happened?
+
+1. **Record** — Your decision was captured with structured metadata (who, what, why, AI context)
+2. **Chain** — The event was linked to the previous event's hash, forming an immutable SHA-256 chain
+3. **Seal** — Human approval triggered the final hash seal. The event is now tamper-proof.
+4. **Export** — The JSON-LD document contains everything an auditor needs: decision, policy, approval, and chain integrity proof.
+
+```
+[Event #N-1] ──hash──▶ [Your Event #N] ──hash──▶ [Event #N+1]
+                              │
+                        SHA-256 sealed
+                        Approval recorded
+                        Policy snapshot frozen
+```
+
+If anyone modifies event #N after sealing, the hash chain breaks at #N+1 — **immediately detectable**.
+
+---
+
+## Try with cURL
+
+```bash
+# Record a decision
+curl -X POST https://proof.cronozen.com/v1/decision-events \
+  -H "Authorization: Bearer YOUR_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "type": "agent_execution",
+    "actor": "support_agent",
+    "action": "ticket_escalated",
+    "input": { "ticketId": "TKT-789" },
+    "aiContext": { "model": "claude-sonnet-4-5-20250514", "confidence": 0.88 }
+  }'
+
+# Approve
+curl -X POST https://proof.cronozen.com/v1/decision-events/{id}/approvals \
+  -H "Authorization: Bearer YOUR_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "approver": "team_lead",
+    "reason": "Confirmed escalation criteria met"
+  }'
+
+# Export evidence
+curl https://proof.cronozen.com/v1/evidence/{id}/export \
+  -H "Authorization: Bearer YOUR_API_KEY"
+```
+
+---
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Proof SDK Reference" icon="code" href="/examples/proof-sdk">
+    Full API reference with error handling and integration patterns
+  </Card>
+  <Card title="DPU Architecture" icon="link" href="/architecture/dpu">
+    How the hash chain and governance guards work under the hood
+  </Card>
+  <Card title="Proof Pipeline" icon="shield" href="/architecture/proof-pipeline">
+    5-stage evidence pipeline from decision to audit-ready proof
+  </Card>
+  <Card title="Why Cronozen" icon="lightbulb" href="/why-cronozen">
+    How Cronozen differs from traditional compliance tools
+  </Card>
+</CardGroup>
