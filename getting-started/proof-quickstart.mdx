@@ -20,27 +20,35 @@ npm install cronozen
 ```typescript
 import { Cronozen } from "cronozen"
 
-const cz = new Cronozen({ apiKey: process.env.CZ_KEY })
+const cz = new Cronozen({
+  apiKey: process.env.CZ_KEY!,
+  baseUrl: "https://cronozen.com/api/v1",
+})
 
 const event = await cz.decision.record({
   type: "agent_execution",
-  actor: "billing_agent",
-  action: "invoice_approved",
-  input: { invoiceId: "INV-001", amount: 280000 },
-  aiContext: { model: "gpt-4", confidence: 0.91 }
+  actor: { id: "billing_agent", type: "ai_agent", name: "Billing Agent" },
+  action: {
+    type: "invoice_approved",
+    input: { invoiceId: "INV-001", amount: 280000 },
+  },
+  aiContext: { model: "gpt-4", confidence: 0.91 },
 })
 
 console.log(`Recorded: ${event.id}`)
-console.log(`Chain hash: ${event.chainHash}`)
+console.log(`Status: ${event.status}`) // → "recorded"
 ```
 
 ## Step 3: Approve and Seal
 
 ```typescript
-await cz.decision.approve(event.id, {
-  approver: "finance_lead",
-  reason: "Verified against contract terms"
+const approval = await cz.decision.approve(event.id, {
+  approver: { id: "finance_lead", type: "human", name: "Finance Lead" },
+  result: "approved",
+  reason: "Verified against contract terms",
 })
+
+console.log(`Sealed hash: ${approval.sealedHash}`)
 
 // Export audit-ready report
 const report = await cz.evidence.export(event.id)
@@ -54,14 +62,13 @@ console.log(report) // JSON-LD v2
 1. **Record** — Your decision was captured with structured metadata (who, what, why, AI context)
 2. **Chain** — The event was linked to the previous event's hash, forming an immutable SHA-256 chain
 3. **Seal** — Human approval triggered the final hash seal. The event is now tamper-proof.
-4. **Export** — The JSON-LD document contains everything an auditor needs: decision, policy, approval, and chain integrity proof.
+4. **Export** — The JSON-LD document contains everything an auditor needs: decision, approval, and chain integrity proof.
 
 ```
 [Event #N-1] ──hash──▶ [Your Event #N] ──hash──▶ [Event #N+1]
                               │
                         SHA-256 sealed
                         Approval recorded
-                        Policy snapshot frozen
 ```
 
 If anyone modifies event #N after sealing, the hash chain breaks at #N+1 — **immediately detectable**.
@@ -77,9 +84,11 @@ curl -X POST https://cronozen.com/api/v1/decision-events \
   -H "Content-Type: application/json" \
   -d '{
     "type": "agent_execution",
-    "actor": "support_agent",
-    "action": "ticket_escalated",
-    "input": { "ticketId": "TKT-789" },
+    "actor": { "id": "support_agent", "type": "ai_agent" },
+    "action": {
+      "type": "ticket_escalated",
+      "input": { "ticketId": "TKT-789" }
+    },
     "aiContext": { "model": "claude-sonnet-4-5-20250514", "confidence": 0.88 }
   }'
 
@@ -88,7 +97,8 @@ curl -X POST https://cronozen.com/api/v1/decision-events/{id}/approvals \
   -H "Authorization: Bearer YOUR_API_KEY" \
   -H "Content-Type: application/json" \
   -d '{
-    "approver": "team_lead",
+    "approver": { "id": "team_lead", "type": "human", "name": "Team Lead" },
+    "result": "approved",
     "reason": "Confirmed escalation criteria met"
   }'
 

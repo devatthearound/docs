@@ -5,7 +5,7 @@ description: "Decision evidence API — record, approve, query, and export tampe
 
 # Proof API
 
-Base URL: `https://cronozen.com/api`
+Base URL: `https://cronozen.com/api/v1`
 
 ## Authentication
 
@@ -61,16 +61,27 @@ Record a new decision event.
 ```json
 {
   "type": "agent_execution",
-  "actor": "support_agent",
-  "action": "refund_approved",
-  "input": {
-    "orderId": "ORD-1234",
-    "amount": 45000
+  "actor": {
+    "id": "support_agent",
+    "type": "ai_agent",
+    "name": "Support Agent"
+  },
+  "action": {
+    "type": "refund_approved",
+    "description": "Auto-approved refund based on policy threshold",
+    "input": {
+      "orderId": "ORD-1234",
+      "amount": 45000
+    },
+    "output": {
+      "refundId": "REF-5678"
+    }
   },
   "aiContext": {
     "model": "gpt-4",
+    "provider": "openai",
     "confidence": 0.87,
-    "mode": "RECOMMENDATION"
+    "reasoning": "Amount within auto-approval threshold"
   },
   "tags": ["refund", "support", "auto-approved"],
   "idempotencyKey": "refund-ORD-1234-20260312"
@@ -79,14 +90,21 @@ Record a new decision event.
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `type` | string | Yes | Event type identifier (e.g., `agent_execution`, `settlement_created`) |
-| `actor` | string | Yes | Who or what made the decision |
-| `action` | string | Yes | What action was taken |
-| `input` | object | Yes | Decision context (arbitrary JSON) |
+| `type` | string | Yes | Event type: `agent_execution` \| `workflow_step` \| `human_approval` \| `ai_recommendation` \| `automated_action` \| `policy_decision` \| `escalation` \| `custom` |
+| `actor` | object | Yes | Who/what made the decision |
+| `actor.id` | string | Yes | Actor identifier |
+| `actor.type` | string | Yes | `human` \| `ai_agent` \| `system` \| `service` |
+| `actor.name` | string | No | Display name |
+| `action` | object | Yes | What action was taken |
+| `action.type` | string | Yes | Action type identifier |
+| `action.description` | string | No | Human-readable description |
+| `action.input` | object | No | Action input data (any JSON) |
+| `action.output` | object | No | Action output data (any JSON) |
 | `aiContext` | object | No | AI involvement details |
 | `aiContext.model` | string | No | Model name (e.g., `gpt-4`, `claude-sonnet-4-5-20250514`) |
+| `aiContext.provider` | string | No | AI provider (e.g., `openai`, `anthropic`) |
 | `aiContext.confidence` | number | No | Confidence score (0–1) |
-| `aiContext.mode` | string | No | `RECOMMENDATION` \| `ANALYSIS` \| `PREDICTION` \| `AUTONOMOUS` |
+| `aiContext.reasoning` | string | No | Decision reasoning |
 | `tags` | string[] | No | Filterable tags for categorization |
 | `idempotencyKey` | string | No | Prevents duplicate recording (see below) |
 
@@ -94,27 +112,37 @@ Record a new decision event.
 
 ```json
 {
-  "success": true,
   "data": {
-    "id": "evt_a1b2c3d4",
+    "id": "cmmnhiobs0002bfi9mlu8eof4",
+    "decisionId": "refund-ORD-1234-20260312",
     "type": "agent_execution",
-    "actor": "support_agent",
-    "action": "refund_approved",
-    "status": "RECORDED",
-    "chainHash": "sha256:7f3a...",
-    "chainIndex": 42,
+    "status": "recorded",
+    "actor": {
+      "id": "support_agent",
+      "type": "ai_agent",
+      "name": "Support Agent"
+    },
+    "action": {
+      "type": "refund_approved",
+      "input": { "orderId": "ORD-1234", "amount": 45000 }
+    },
+    "occurredAt": "2026-03-12T13:00:00.000Z",
     "tags": ["refund", "support", "auto-approved"],
-    "createdAt": "2026-03-12T13:00:00Z"
+    "evidence": {
+      "id": "evi_x1y2z3",
+      "status": "pending",
+      "chainHash": null,
+      "chainIndex": null
+    },
+    "createdAt": "2026-03-12T13:00:00.000Z",
+    "updatedAt": "2026-03-12T13:00:00.000Z"
   }
 }
 ```
 
 #### Idempotency
 
-Pass an `idempotencyKey` to prevent duplicate events from retries or network issues. If the same key is sent again:
-
-- **Within 24 hours**: Returns the original event (200), no duplicate created
-- **After 24 hours**: Key expires, a new event would be created
+Pass an `idempotencyKey` to prevent duplicate events from retries or network issues. If the same key is sent again, the original event is returned (200) instead of creating a duplicate.
 
 ```bash
 # First call — creates event
@@ -144,24 +172,17 @@ List decision events with filters.
 
 | Parameter | Type | Description |
 |-----------|------|-------------|
-| `type` | string | Filter by event type |
-| `actor` | string | Filter by actor |
-| `status` | string | `RECORDED` \| `SEALED` |
-| `tags` | string | Comma-separated tag filter (AND logic) |
-| `from` | ISO 8601 | Events created after this time |
-| `to` | ISO 8601 | Events created before this time |
-| `limit` | number | Max results (default: 50, max: 200) |
-| `cursor` | string | Pagination cursor from previous response |
+| `type` | string | Filter by event type (e.g., `agent_execution`) |
+| `status` | string | `recorded` \| `sealed` \| `approved` \| `rejected` |
+| `tag` | string | Filter by a single tag |
+| `limit` | number | Max results, 1–100 (default: 20) |
+| `offset` | number | Pagination offset (default: 0) |
 
-**Example — filter by tags:**
+**Example:**
 
 ```bash
-# Events tagged with both "refund" AND "support"
-curl "https://cronozen.com/api/v1/decision-events?tags=refund,support" \
-  -H "Authorization: Bearer czk_live_..."
-
-# Events by specific actor, last 7 days
-curl "https://cronozen.com/api/v1/decision-events?actor=billing_agent&from=2026-03-05T00:00:00Z" \
+# Events tagged with "settlement", sealed only
+curl "https://cronozen.com/api/v1/decision-events?tag=settlement&status=sealed&limit=50" \
   -H "Authorization: Bearer czk_live_..."
 ```
 
@@ -169,21 +190,23 @@ curl "https://cronozen.com/api/v1/decision-events?actor=billing_agent&from=2026-
 
 ```json
 {
-  "success": true,
-  "data": {
-    "events": [
-      {
-        "id": "evt_a1b2c3d4",
-        "type": "agent_execution",
-        "actor": "support_agent",
-        "action": "refund_approved",
-        "status": "SEALED",
-        "tags": ["refund", "support"],
-        "chainHash": "sha256:7f3a...",
-        "createdAt": "2026-03-12T13:00:00Z"
-      }
-    ],
-    "nextCursor": "eyJpZCI6ImV2dF8...",
+  "data": [
+    {
+      "id": "cmmnhiobs0002bfi9mlu8eof4",
+      "decisionId": "settle-STL-001",
+      "type": "automated_action",
+      "status": "sealed",
+      "actor": { "id": "finance_bot", "type": "system" },
+      "action": { "type": "settlement_created" },
+      "tags": ["settlement", "finance"],
+      "createdAt": "2026-03-12T13:00:00.000Z",
+      "updatedAt": "2026-03-12T13:05:00.000Z"
+    }
+  ],
+  "pagination": {
+    "total": 142,
+    "limit": 50,
+    "offset": 0,
     "hasMore": true
   }
 }
@@ -201,31 +224,43 @@ Add human approval and seal the event with SHA-256.
 
 ```json
 {
-  "approver": "team_lead",
+  "approver": {
+    "id": "team_lead",
+    "type": "human",
+    "name": "Kim"
+  },
+  "result": "approved",
   "reason": "Verified against refund policy v2.1"
 }
 ```
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `approver` | string | Yes | Who approved the decision |
-| `reason` | string | Yes | Why the decision was approved |
+| `approver` | object | Yes | Who approved the decision |
+| `approver.id` | string | Yes | Approver identifier |
+| `approver.type` | string | Yes | `human` \| `system` |
+| `approver.name` | string | No | Display name |
+| `result` | string | Yes | `approved` \| `rejected` |
+| `reason` | string | No | Reason for the decision |
 
 **Response (200):**
 
 ```json
 {
-  "success": true,
   "data": {
-    "id": "evt_a1b2c3d4",
-    "status": "SEALED",
-    "approval": {
-      "approver": "team_lead",
-      "reason": "Verified against refund policy v2.1",
-      "approvedAt": "2026-03-12T13:05:00Z"
+    "approvalId": "apr_m1n2o3",
+    "decisionId": "refund-ORD-1234-20260312",
+    "approver": {
+      "id": "team_lead",
+      "type": "human",
+      "name": "Kim"
     },
-    "chainHash": "sha256:9e2b...",
-    "sealedAt": "2026-03-12T13:05:00Z"
+    "result": "approved",
+    "reason": "Verified against refund policy v2.1",
+    "evidenceLevel": "AUDIT_READY",
+    "sealedHash": "sha256:9943798c6313e9dd2cffa71686176d4125a65777...",
+    "sealedAt": "2026-03-12T13:05:00.000Z",
+    "createdAt": "2026-03-12T13:05:00.000Z"
   }
 }
 ```
@@ -234,10 +269,9 @@ Add human approval and seal the event with SHA-256.
 
 ```json
 {
-  "success": false,
   "error": {
     "code": "CONFLICT",
-    "message": "Event evt_a1b2c3d4 is already sealed. Sealed events cannot be modified."
+    "message": "Event is already sealed. Sealed events cannot be modified."
   }
 }
 ```
@@ -258,37 +292,38 @@ Retrieve sealed evidence with full hash chain verification data.
 
 ```json
 {
-  "success": true,
   "data": {
-    "id": "evt_a1b2c3d4",
-    "type": "agent_execution",
-    "actor": "support_agent",
-    "action": "refund_approved",
-    "status": "SEALED",
-    "input": {
-      "orderId": "ORD-1234",
-      "amount": 45000
-    },
-    "aiContext": {
-      "model": "gpt-4",
-      "confidence": 0.87,
-      "mode": "RECOMMENDATION"
+    "id": "evi_x1y2z3",
+    "decisionId": "refund-ORD-1234-20260312",
+    "status": "sealed",
+    "evidenceLevel": "AUDIT_READY",
+    "event": {
+      "type": "agent_execution",
+      "actor": { "id": "support_agent", "type": "ai_agent" },
+      "action": {
+        "type": "refund_approved",
+        "input": { "orderId": "ORD-1234", "amount": 45000 }
+      },
+      "occurredAt": "2026-03-12T13:00:00.000Z",
+      "aiContext": {
+        "model": "gpt-4",
+        "confidence": 0.87
+      }
     },
     "approval": {
-      "approver": "team_lead",
+      "approver": { "id": "team_lead", "type": "human", "name": "Kim" },
+      "result": "approved",
       "reason": "Verified against refund policy v2.1",
-      "approvedAt": "2026-03-12T13:05:00Z"
+      "approvedAt": "2026-03-12T13:05:00.000Z"
     },
-    "tags": ["refund", "support", "auto-approved"],
     "chain": {
-      "hash": "sha256:9e2b...",
-      "previousHash": "sha256:7f3a...",
+      "hash": "sha256:9943798c6313e9dd2cffa71686176d4125a65777...",
+      "previousHash": "sha256:7f3a8b2c...",
       "index": 42,
-      "verified": true
+      "domain": "proof"
     },
-    "evidenceLevel": "AUDIT_READY",
-    "createdAt": "2026-03-12T13:00:00Z",
-    "sealedAt": "2026-03-12T13:05:00Z"
+    "sealedAt": "2026-03-12T13:05:00.000Z",
+    "createdAt": "2026-03-12T13:00:00.000Z"
   }
 }
 ```
@@ -296,13 +331,13 @@ Retrieve sealed evidence with full hash chain verification data.
 | Field | Description |
 |-------|-------------|
 | `chain.hash` | SHA-256 hash of this event (content + previousHash + timestamp) |
-| `chain.previousHash` | Hash of the preceding event in the chain |
+| `chain.previousHash` | Hash of the preceding event in the chain (null for genesis) |
 | `chain.index` | Position in the sequential chain |
-| `chain.verified` | Whether chain integrity is valid at this point |
+| `chain.domain` | Hash chain domain (e.g., `proof`) |
 | `evidenceLevel` | `DRAFT` → `DOCUMENTED` → `AUDIT_READY` |
 
 <Info>
-  The `evidence.get()` endpoint returns the full event payload including input data, AI context, and chain verification. Use this for compliance checks and chain integrity verification. Use `evidence.export()` when you need a portable audit document.
+  The `evidence.get()` endpoint returns the full event payload including input data, AI context, and chain position. Use this for compliance checks and chain integrity verification. Use `evidence.export()` when you need a portable audit document.
 </Info>
 
 ---
@@ -319,30 +354,24 @@ Export a sealed event as a JSON-LD v2 audit document.
 {
   "@context": "https://schema.cronozen.com/decision-proof/v2",
   "@type": "DecisionProof",
-  "id": "evt_a1b2c3d4",
-  "decision": {
-    "type": "agent_execution",
-    "actor": "support_agent",
-    "action": "refund_approved",
-    "input": { "orderId": "ORD-1234", "amount": 45000 },
-    "aiContext": { "model": "gpt-4", "confidence": 0.87 }
-  },
-  "approval": {
-    "approver": "team_lead",
-    "reason": "Verified against refund policy v2.1",
-    "approvedAt": "2026-03-12T13:05:00Z"
-  },
+  "version": "2.0",
+  "exportedAt": "2026-03-12T14:00:00.000Z",
   "evidence": {
-    "level": "AUDIT_READY",
-    "chainHash": "sha256:9e2b...",
-    "previousHash": "sha256:7f3a...",
-    "chainIndex": 42,
-    "chainIntegrity": "VERIFIED"
+    "id": "evi_x1y2z3",
+    "decisionId": "refund-ORD-1234-20260312",
+    "status": "sealed",
+    "evidenceLevel": "AUDIT_READY",
+    "event": { "..." : "..." },
+    "approval": { "..." : "..." },
+    "chain": { "..." : "..." }
   },
-  "metadata": {
-    "createdAt": "2026-03-12T13:00:00Z",
-    "sealedAt": "2026-03-12T13:05:00Z",
-    "exportedAt": "2026-03-12T14:00:00Z"
+  "verification": {
+    "hashAlgorithm": "SHA-256",
+    "chainDomain": "proof",
+    "chainIndex": 42,
+    "chainHash": "sha256:9943798c...",
+    "previousHash": "sha256:7f3a8b2c...",
+    "verifyUrl": "https://cronozen.com/verify/cmmnhiobs0002bfi9mlu8eof4"
   }
 }
 ```
@@ -355,13 +384,26 @@ This document is self-contained and can be stored, shared, or submitted to audit
 
 | Status | Code | Description | Common Cause |
 |--------|------|-------------|--------------|
-| 400 | `VALIDATION_ERROR` | Invalid request body | Missing required fields, invalid types |
+| 400 | `BAD_REQUEST` | Malformed request | Invalid JSON body |
 | 401 | `UNAUTHORIZED` | Invalid or missing API key | Wrong key, expired key, missing header |
 | 403 | `FORBIDDEN` | Insufficient scope | `proof:read` key trying to write |
-| 404 | `NOT_FOUND` | Event not found | Invalid event ID |
+| 404 | `NOT_FOUND` | Event not found | Invalid event ID, evidence not yet sealed |
 | 409 | `CONFLICT` | Event already sealed | Attempting to approve a sealed event |
-| 429 | `RATE_LIMITED` | Too many requests | Retry after `Retry-After` header value |
-| 500 | `SERVER_ERROR` | Internal error | Contact support |
+| 422 | `VALIDATION_ERROR` | Invalid request body | Missing required fields, invalid types |
+| 429 | `RATE_LIMIT` | Too many requests | Retry after a short delay |
+| 500 | `INTERNAL_ERROR` | Internal error | Contact support |
+
+All error responses follow this format:
+
+```json
+{
+  "error": {
+    "code": "CONFLICT",
+    "message": "Event is already sealed. Sealed events cannot be modified.",
+    "details": {}
+  }
+}
+```
 
 ### 409 Conflict — Sealed Event
 
@@ -375,6 +417,8 @@ The most common non-trivial error. Occurs when calling `POST /v1/decision-events
 **How to handle:**
 
 ```typescript
+import { ConflictError } from "cronozen"
+
 try {
   await cz.decision.approve(eventId, payload)
 } catch (e) {
@@ -387,3 +431,14 @@ try {
 ```
 
 Use `idempotencyKey` on the original `decision.record()` call to prevent duplicate events upstream.
+
+---
+
+<CardGroup cols={2}>
+  <Card title="Proof SDK" icon="code" href="/examples/proof-sdk">
+    TypeScript SDK reference with error handling and integration patterns
+  </Card>
+  <Card title="Proof Pipeline" icon="shield" href="/architecture/proof-pipeline">
+    How the 4-stage evidence pipeline works under the hood
+  </Card>
+</CardGroup>

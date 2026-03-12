@@ -8,7 +8,7 @@ description: "Record, approve, and export tamper-proof evidence for AI decisions
 The Cronozen Proof SDK provides a lightweight, type-safe client for the Decision Proof API. Record AI decisions, add human approvals, and export audit-ready evidence.
 
 <Info>
-  **Package**: `cronozen` · **Size**: 11.1KB · **Dependencies**: Zero · **Formats**: CJS + ESM + TypeScript
+  **Package**: `cronozen` · **Size**: 11.2KB · **Dependencies**: Zero · **Formats**: CJS + ESM + TypeScript
 </Info>
 
 ---
@@ -26,22 +26,31 @@ npm install cronozen
 ```typescript
 import { Cronozen } from "cronozen"
 
-const cz = new Cronozen({ apiKey: process.env.CZ_KEY })
+const cz = new Cronozen({
+  apiKey: process.env.CZ_KEY!,
+  baseUrl: "https://cronozen.com/api/v1",
+})
 
 // 1. Record a decision
 const event = await cz.decision.record({
   type: "agent_execution",
-  actor: "support_agent",
-  action: "refund_approved",
-  input: { orderId: "ORD-1234", amount: 45000 },
-  aiContext: { model: "gpt-4", confidence: 0.87 }
+  actor: { id: "support_agent", type: "ai_agent" },
+  action: {
+    type: "refund_approved",
+    input: { orderId: "ORD-1234", amount: 45000 },
+  },
+  aiContext: { model: "gpt-4", confidence: 0.87 },
 })
 
 // 2. Add human approval (seals with SHA-256)
-await cz.decision.approve(event.id, {
-  approver: "team_lead",
-  reason: "Policy-compliant refund under $100K threshold"
+const approval = await cz.decision.approve(event.id, {
+  approver: { id: "team_lead", type: "human", name: "Team Lead" },
+  result: "approved",
+  reason: "Policy-compliant refund under $100K threshold",
 })
+
+console.log(approval.sealedHash)
+// → "sha256:9943798c6313e9dd2cffa71686176d4125a65777..."
 
 // 3. Export audit-ready evidence
 const report = await cz.evidence.export(event.id)
@@ -58,38 +67,75 @@ Create a new decision event with structured metadata.
 
 ```typescript
 const event = await cz.decision.record({
-  type: "settlement_created",     // Event type identifier
-  actor: "finance_bot",           // Who/what made the decision
-  action: "approve_settlement",   // What action was taken
-  input: {                        // Decision context (any JSON)
-    settlementId: "STL-5678",
-    amount: 150000,
-    currency: "KRW"
+  type: "settlement_created",            // Event type identifier
+  actor: {
+    id: "finance_bot",                   // Who/what made the decision
+    type: "ai_agent",                    // "human" | "ai_agent" | "system" | "service"
+    name: "Finance Bot",                 // Optional display name
   },
-  aiContext: {                    // Optional: AI involvement details
+  action: {
+    type: "approve_settlement",          // What action was taken
+    description: "Auto-approved based on amount threshold",
+    input: {                             // Action inputs (any JSON)
+      settlementId: "STL-5678",
+      amount: 150000,
+      currency: "KRW",
+    },
+    output: {                            // Action outputs (any JSON)
+      priority: "high",
+    },
+  },
+  aiContext: {                           // Optional: AI involvement details
     model: "claude-sonnet-4-5-20250514",
+    provider: "anthropic",
     confidence: 0.92,
-    mode: "RECOMMENDATION"       // RECOMMENDATION | ANALYSIS | PREDICTION | AUTONOMOUS
+    reasoning: "Amount within auto-approval threshold",
   },
   tags: ["settlement", "finance", "auto"],  // Optional: filterable tags
-  idempotencyKey: "settle-STL-5678"         // Optional: prevent duplicates
+  idempotencyKey: "settle-STL-5678",        // Optional: prevent duplicates
 })
 ```
 
-**Returns**: `{ id, type, actor, action, status, chainHash, createdAt }`
+**Returns**: `DecisionEventResponse`
+
+```typescript
+{
+  id: string
+  decisionId: string
+  type: DecisionEventType
+  status: "recorded"           // Initially "recorded"
+  actor: DecisionActor
+  action: DecisionAction
+  occurredAt: string
+  aiContext?: AIContext
+  tags: string[]
+  evidence?: {
+    id: string
+    status: "pending"
+    chainHash?: string
+    chainIndex?: number
+  }
+  createdAt: string
+  updatedAt: string
+}
+```
+
+**Event types**: `agent_execution` | `workflow_step` | `human_approval` | `ai_recommendation` | `automated_action` | `policy_decision` | `escalation` | `custom`
 
 #### Idempotency
 
-Pass `idempotencyKey` to safely retry without creating duplicates. If the same key is sent within 24 hours, the original event is returned instead of creating a new one.
+Pass `idempotencyKey` to safely retry without creating duplicates. If the same key is sent again, the original event is returned instead of creating a new one.
 
 ```typescript
 // Safe to retry — same key returns same event
 const event = await cz.decision.record({
   type: "settlement_created",
-  actor: "cron_job",
-  action: "daily_settlement",
-  input: { date: "2026-03-12" },
-  idempotencyKey: "daily-settle-2026-03-12"
+  actor: { id: "cron_job", type: "system" },
+  action: {
+    type: "daily_settlement",
+    input: { date: "2026-03-12" },
+  },
+  idempotencyKey: "daily-settle-2026-03-12",
 })
 ```
 
@@ -102,21 +148,34 @@ const event = await cz.decision.record({
 Add human approval and seal the decision with SHA-256.
 
 ```typescript
-await cz.decision.approve(event.id, {
-  approver: "center_director",
-  reason: "Reviewed and approved per settlement policy v2.1"
+const approval = await cz.decision.approve(event.id, {
+  approver: {
+    id: "center_director",
+    type: "human",                      // "human" | "system"
+    name: "Center Director",
+  },
+  result: "approved",                   // "approved" | "rejected"
+  reason: "Reviewed and approved per settlement policy v2.1",
 })
+
+// approval.sealedHash   → "sha256:..." (only if approved)
+// approval.sealedAt     → "2026-03-12T13:05:00Z"
+// approval.evidenceLevel → "AUDIT_READY"
 ```
 
 Once approved, the event is **sealed** — its hash becomes part of the immutable chain.
+
+<Warning>
+  Calling `approve()` on an already-sealed event throws `ConflictError` (409). This is by design — sealed events cannot be modified.
+</Warning>
 
 ### `cz.decision.get(id)`
 
 Retrieve a single decision event with full metadata.
 
 ```typescript
-const event = await cz.decision.get("evt_abc123")
-// → { id, type, actor, action, status, approval, chainHash, ... }
+const event = await cz.decision.get("cmmnhiobs0002bfi9mlu8eof4")
+// → { id, decisionId, type, status, actor, action, evidence, ... }
 ```
 
 ### `cz.decision.list(params?)`
@@ -124,30 +183,27 @@ const event = await cz.decision.get("evt_abc123")
 List decision events with optional filters.
 
 ```typescript
-const events = await cz.decision.list({
-  type: "settlement_created",
-  status: "SEALED",
-  limit: 50
+const { data, pagination } = await cz.decision.list({
+  type: "settlement_created",    // Filter by event type
+  status: "sealed",              // "recorded" | "pending_approval" | "approved" | "rejected" | "sealed"
+  tag: "settlement",             // Filter by single tag
+  limit: 50,                     // 1-100 (default: 20)
+  offset: 0,                     // Pagination offset
 })
 ```
 
-#### Filter by Tags
-
-Use `tags` to filter events by one or more tags (AND logic):
+**Returns**: `DecisionEventListResponse`
 
 ```typescript
-// Events tagged with both "settlement" AND "finance"
-const events = await cz.decision.list({
-  tags: ["settlement", "finance"]
-})
-
-// Combine with other filters
-const recentRefunds = await cz.decision.list({
-  tags: ["refund"],
-  actor: "support_agent",
-  from: "2026-03-01T00:00:00Z",
-  limit: 20
-})
+{
+  data: DecisionEventResponse[]
+  pagination: {
+    total: number
+    limit: number
+    offset: number
+    hasMore: boolean
+  }
+}
 ```
 
 ### `cz.evidence.get(id)`
@@ -155,20 +211,21 @@ const recentRefunds = await cz.decision.list({
 Retrieve sealed evidence with full hash chain verification data. Returns the complete event payload including input data, AI context, approval chain, and chain integrity status.
 
 ```typescript
-const evidence = await cz.evidence.get("evt_abc123")
+const evidence = await cz.evidence.get("cmmnhiobs0002bfi9mlu8eof4")
 
-console.log(evidence.chain.hash)          // "sha256:9e2b..."
-console.log(evidence.chain.previousHash)  // "sha256:7f3a..."
-console.log(evidence.chain.index)         // 42
-console.log(evidence.chain.verified)      // true
+console.log(evidence.status)              // "sealed"
 console.log(evidence.evidenceLevel)       // "AUDIT_READY"
-console.log(evidence.approval)            // { approver, reason, approvedAt }
+console.log(evidence.chain.hash)          // "sha256:9e2b..."
+console.log(evidence.chain.previousHash)  // "sha256:7f3a..." or null (genesis)
+console.log(evidence.chain.index)         // 42
+console.log(evidence.chain.domain)        // "proof"
+console.log(evidence.approval)            // { approver, result, reason, approvedAt }
 ```
 
 Use `evidence.get()` for chain integrity verification and compliance checks. Use `evidence.export()` when you need a portable audit document.
 
 <Info>
-  See the full response schema in the [Proof API Reference](/api-reference/proof#get-v1evidenceid).
+  Throws `NotFoundError` if the decision hasn't been sealed yet.
 </Info>
 
 ### `cz.evidence.export(id)`
@@ -176,43 +233,51 @@ Use `evidence.get()` for chain integrity verification and compliance checks. Use
 Export audit-ready document in JSON-LD v2 format.
 
 ```typescript
-const report = await cz.evidence.export("evt_abc123")
-// → JSON-LD document conforming to schema.cronozen.com/decision-proof/v2
+const report = await cz.evidence.export("cmmnhiobs0002bfi9mlu8eof4")
+
+// report["@context"]                   → "https://schema.cronozen.com/decision-proof/v2"
+// report["@type"]                      → "DecisionProof"
+// report.verification.hashAlgorithm    → "SHA-256"
+// report.verification.verifyUrl        → "https://cronozen.com/verify/..."
 ```
 
 **Export includes**:
 - Structured decision record (actor, action, input, AI context)
-- Policy snapshot at time of decision
 - Approval chain with timestamps
-- SHA-256 hash chain link
-- Evidence level and chain integrity status
+- SHA-256 hash chain link and position
+- Evidence level and verification metadata
 
 ---
 
 ## Error Handling
 
-The SDK provides 7 typed error classes for precise error handling:
+The SDK provides 9 typed error classes for precise error handling:
 
 | Error Class | HTTP Status | When It Occurs |
 |-------------|-------------|----------------|
-| `ValidationError` | 400 | Missing required fields, invalid types |
-| `UnauthorizedError` | 401 | Invalid or missing API key |
-| `ForbiddenError` | 403 | API key lacks required scope (e.g., `proof:read` key trying to write) |
+| `BadRequestError` | 400 | Malformed request |
+| `AuthenticationError` | 401 | Invalid or missing API key |
+| `ForbiddenError` | 403 | API key lacks required scope |
 | `NotFoundError` | 404 | Event ID does not exist |
 | `ConflictError` | 409 | Event is already sealed (cannot approve twice) |
-| `RateLimitError` | 429 | Too many requests — check `retryAfter` |
-| `ServerError` | 500 | Internal error |
+| `ValidationError` | 422 | Missing required fields, invalid types |
+| `RateLimitError` | 429 | Too many requests |
+| `TimeoutError` | — | Request exceeded timeout |
+| `NetworkError` | — | Connection failed |
 
 ```typescript
 import {
   Cronozen,
+  CronozenError,
+  AuthenticationError,
+  ForbiddenError,
   NotFoundError,
   ConflictError,
-  UnauthorizedError,
-  ForbiddenError,
   ValidationError,
+  BadRequestError,
   RateLimitError,
-  ServerError
+  TimeoutError,
+  NetworkError,
 } from "cronozen"
 
 try {
@@ -220,22 +285,23 @@ try {
 } catch (e) {
   if (e instanceof ConflictError) {
     // 409 — Event already sealed. This is safe to ignore on retries.
-    // The approval succeeded previously; fetch the existing evidence.
     const existing = await cz.evidence.get(id)
     console.log("Already sealed at:", existing.sealedAt)
   }
   if (e instanceof ForbiddenError) {
     // 403 — API key scope insufficient
-    // e.g., proof:read key trying to approve
     console.error("Need proof:write scope")
   }
   if (e instanceof NotFoundError) {
     // 404 — Event does not exist
   }
-  if (e instanceof RateLimitError) {
-    // 429 — Back off and retry
-    const retryAfter = e.retryAfter // seconds
-    await sleep(retryAfter * 1000)
+  if (e instanceof ValidationError) {
+    // 422 — Invalid request body
+    console.error("Validation errors:", e.details)
+  }
+  if (e instanceof CronozenError) {
+    // Any other API error
+    console.error(e.code, e.status, e.details)
   }
 }
 ```
@@ -245,7 +311,7 @@ try {
 The most common non-trivial error. Occurs when two approvers act simultaneously, or retry logic re-sends an already-successful approval.
 
 ```typescript
-async function safeApprove(eventId: string, payload: ApprovalPayload) {
+async function safeApprove(eventId: string, payload: ApproveDecisionRequest) {
   try {
     return await cz.decision.approve(eventId, payload)
   } catch (e) {
@@ -269,31 +335,37 @@ async function safeApprove(eventId: string, payload: ApprovalPayload) {
 For production use, wrap Proof calls so they never block your business logic:
 
 ```typescript
-async function fireProof(fn: () => Promise<void>) {
-  try {
-    await fn()
-  } catch (e) {
-    // Log but don't throw — Proof failure must not break business flow
-    console.warn("[Proof] Recording failed:", e)
-  }
+function fireProof(
+  cz: Cronozen,
+  fn: (cz: Cronozen) => Promise<unknown>,
+  label: string,
+): void {
+  fn(cz).catch((error) => {
+    console.error(`[Proof] ${label} failed (non-blocking):`, error)
+  })
 }
 
 // In your settlement handler:
 const settlement = await createSettlement(data)
 
 // Non-blocking evidence recording
-await fireProof(() =>
+fireProof(cz, (cz) =>
   cz.decision.record({
-    type: "settlement_created",
-    actor: actorId,
-    action: "create",
-    input: { settlementId: settlement.id, amount: settlement.amount }
-  })
+    type: "automated_action",
+    actor: { id: actorId, type: "system" },
+    action: {
+      type: "settlement_created",
+      input: { settlementId: settlement.id, amount: settlement.amount },
+    },
+    tags: ["settlement", vertical],
+    idempotencyKey: `settlement-created-${settlement.id}`,
+  }),
+  `settlement-record-${settlement.id}`,
 )
 ```
 
 <Warning>
-  If `CZ_KEY` environment variable is not set, the SDK client silently disables itself. This means you can add Proof integration to your codebase and activate it per-environment by simply setting the key.
+  If `CZ_KEY` environment variable is not set, you can make the SDK client silently disable itself. This means you can add Proof integration to your codebase and activate it per-environment by simply setting the key.
 </Warning>
 
 ---
@@ -330,17 +402,19 @@ Event Sealed          →  Webhook fires to your endpoint
 
 ```typescript
 const cz = new Cronozen({
-  apiKey: process.env.CZ_KEY,
-  baseUrl: "https://cronozen.com/api",  // Optional: custom endpoint
-  timeout: 5000,                           // Optional: request timeout (ms)
+  apiKey: process.env.CZ_KEY!,              // Required: API key
+  baseUrl: "https://cronozen.com/api/v1",   // Required: API endpoint
+  timeout: 10000,                            // Optional: request timeout (ms)
+  fetch: customFetch,                        // Optional: custom fetch implementation
 })
 ```
 
-| Option | Default | Description |
-|--------|---------|-------------|
-| `apiKey` | — | API key (required) |
-| `baseUrl` | `https://cronozen.com/api` | API endpoint |
-| `timeout` | `10000` | Request timeout in ms |
+| Option | Required | Default | Description |
+|--------|----------|---------|-------------|
+| `apiKey` | Yes | — | API key with `proof:write` or `proof:read` scope |
+| `baseUrl` | Yes | — | Proof API base URL |
+| `timeout` | No | `10000` | Request timeout in ms |
+| `fetch` | No | `globalThis.fetch` | Custom fetch implementation |
 
 ---
 
