@@ -1,0 +1,133 @@
+---
+title: "Decision Proof for Agents"
+description: "Bind every AI agent decision to a verifiable DPU — input hash, policy snapshot, model output, approval chain, and chain link"
+---
+
+# Decision Proof for Agents
+
+AI agents make decisions faster than humans can review them. Without a proof layer, every agent action becomes an audit liability — "Why did the agent approve this?" has no answer six months later.
+
+Cronozen agents produce a **Decision Proof Unit (DPU)** for every action: a sealed bundle that captures inputs, model reasoning, applied policy, and approval chain into a hash-linked record.
+
+## Why Agents Need DPU
+
+| Without DPU | With DPU |
+|-------------|----------|
+| "The agent approved it" | "Approved on `2026-05-28T03:14Z`, policy v2.3, inputs hash `a7f3…`, model `claude-opus-4-7`, confidence 0.91" |
+| Cannot reproduce decision | Re-run with stored snapshot reproduces output |
+| Cannot detect tampering | Chain hash mismatch detected immediately |
+| Cannot prove policy at time | Policy snapshot stored with each DPU |
+
+## What Goes Into an Agent DPU
+
+<CardGroup cols={2}>
+  <Card title="Input Evidence" icon="file">
+    Hash of all data the agent saw — documents, structured records, prior conversation context.
+  </Card>
+  <Card title="Policy Snapshot" icon="scroll">
+    Frozen copy of the policy version applied at decision time. Even if policy changes later, the original is verifiable.
+  </Card>
+  <Card title="Model Reasoning" icon="brain">
+    Model ID, version, prompt, raw output, confidence score, and any tool calls invoked.
+  </Card>
+  <Card title="Approval Chain" icon="users">
+    Who reviewed the agent's output, when, and on what evidence. Human-in-the-loop or human-on-the-loop both supported.
+  </Card>
+</CardGroup>
+
+## Lifecycle
+
+```
+1. Agent invoked
+   ↓
+2. Inputs collected → hash computed → input_hash
+   ↓
+3. Policy snapshot loaded → policy_hash
+   ↓
+4. Model call → output + confidence + tool_calls
+   ↓
+5. (Optional) Human review → approver_id + decision
+   ↓
+6. DPU sealed: { input_hash, policy_hash, model_output, approval, prev_chain_hash }
+   ↓
+7. SHA-256 over the bundle → chain_hash → stored, linked to prev
+```
+
+## Sealing a Decision
+
+```typescript
+import { CronozenClient } from '@cronozen/sdk'
+
+const cronozen = new CronozenClient({ apiKey: process.env.CRONOZEN_API_KEY })
+
+const decision = await cronozen.agents.decide({
+  agentId: 'grant-review-agent-v3',
+  inputs: {
+    applicationId: 'app_8x2k',
+    documents: [/* document refs */],
+  },
+  policyId: 'subsidy-policy-v2.3',
+  requireHumanApproval: true,
+})
+
+// decision.dpu contains the sealed proof
+console.log(decision.dpu.chainHash)
+// → "a7f3d8e2c1...b4f9"
+```
+
+## Verifying a Past Decision
+
+Anyone with the DPU and the source data can re-verify:
+
+```typescript
+const verification = await cronozen.dpu.verify({
+  dpuId: 'dpu_a7f3d8e2',
+})
+
+// {
+//   chainIntact: true,
+//   inputHashMatches: true,
+//   policyHashMatches: true,
+//   approvalChainValid: true,
+//   reproducedOutput: { ... }
+// }
+```
+
+If any input data has been modified after the decision, `inputHashMatches` returns `false` — the auditor sees this immediately.
+
+## Decision Modes
+
+<CardGroup cols={3}>
+  <Card title="Autonomous" icon="robot">
+    Agent decides without human review. DPU captures full reasoning for post-hoc audit. Best for high-volume, low-risk actions.
+  </Card>
+  <Card title="Human-on-the-Loop" icon="eye">
+    Agent decides, human can intervene within a window. DPU captures both agent output and human override (if any).
+  </Card>
+  <Card title="Human-in-the-Loop" icon="user-check">
+    Human approves before action. DPU captures agent recommendation + human decision + reasoning. Required for high-risk decisions.
+  </Card>
+</CardGroup>
+
+## When to Require Human Approval
+
+Set `requireHumanApproval: true` for decisions that meet any of these criteria:
+
+- Financial impact > organizational threshold
+- Affects a regulated population (vulnerable individuals, etc.)
+- Policy explicitly requires manual review
+- Confidence score below configured floor (e.g., 0.85)
+- Novel input pattern (out-of-distribution detection)
+
+## Integration with [DPU Engine](/architecture/dpu)
+
+Every agent DPU is a regular DPU under the hood — same chain, same verification surface, same audit export format. Agent DPUs and human DPUs interleave in the same chain, providing a unified decision history across all operations.
+
+For the underlying DPU architecture, see [DPU Engine](/architecture/dpu). For chain-level guarantees and integrity proofs, see [Proof Pipeline](/architecture/proof-pipeline).
+
+## See Also
+
+- [Agents Overview](/agents/overview)
+- [Agents Workflow](/agents/workflow)
+- [DPU Engine](/architecture/dpu)
+- [Proof Pipeline](/architecture/proof-pipeline)

@@ -1,0 +1,148 @@
+---
+title: "Webhook Integration"
+description: "Receive real-time events from Cronozen — signing, retry, idempotency, and security"
+---
+
+# Webhook Integration
+
+Webhooks push real-time events from Cronozen to your endpoint — decision sealed, payment completed, attendance verified, certificate issued. This guide covers setup, security verification, and retry handling.
+
+## When to Use Webhooks vs Polling
+
+<CardGroup cols={2}>
+  <Card title="Use webhooks" icon="bell">
+    Real-time events (decisions, payments, attendance), low-latency UX requirements, or events that don't have predictable timing.
+  </Card>
+  <Card title="Use polling" icon="rotate">
+    Batch reconciliation, simple dashboards, or environments where receiving inbound requests is impractical.
+  </Card>
+</CardGroup>
+
+## Setup (3 Steps)
+
+### 1. Register your endpoint
+
+```bash
+curl -X POST https://cronozen.com/api/v1/webhooks \
+  -H "Authorization: Bearer $CRONOZEN_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "url": "https://your-app.example.com/webhooks/cronozen",
+    "events": ["dpu.sealed", "payment.completed", "attendance.verified"],
+    "active": true
+  }'
+```
+
+Response includes a `signingSecret` — store this securely. It is shown **only once**.
+
+### 2. Verify the signature on every request
+
+Every webhook payload includes an `X-Cronozen-Signature` header. Verify it with HMAC-SHA256:
+
+```typescript
+import crypto from 'crypto'
+
+function verifyWebhook(payload: string, signature: string, secret: string): boolean {
+  const expected = crypto
+    .createHmac('sha256', secret)
+    .update(payload)
+    .digest('hex')
+  return crypto.timingSafeEqual(
+    Buffer.from(signature),
+    Buffer.from(expected),
+  )
+}
+```
+
+Reject any request that fails verification. Without this check, anyone can forge events to your endpoint.
+
+### 3. Respond fast
+
+Return `2xx` within **5 seconds**. If your handler does heavy work, queue it and return immediately:
+
+```typescript
+app.post('/webhooks/cronozen', async (req, res) => {
+  if (!verifyWebhook(req.rawBody, req.headers['x-cronozen-signature'], SECRET)) {
+    return res.status(401).end()
+  }
+
+  await queue.publish('webhook.cronozen', req.body)
+  res.status(200).end()
+})
+```
+
+Slow responses cause retries (see below), creating duplicate processing.
+
+## Retry Behavior
+
+If your endpoint returns non-2xx or times out, Cronozen retries with exponential backoff:
+
+| Attempt | Delay |
+|---------|-------|
+| 1 | Immediate |
+| 2 | 30s |
+| 3 | 2 min |
+| 4 | 10 min |
+| 5 | 1 hour |
+| 6 | 6 hours |
+| 7 | 24 hours |
+
+After 7 failed attempts the event is marked `failed`. You can manually retry from the dashboard or via the API:
+
+```bash
+curl -X POST https://cronozen.com/api/v1/webhooks/events/{eventId}/retry \
+  -H "Authorization: Bearer $CRONOZEN_API_KEY"
+```
+
+## Idempotency — Critical
+
+Webhook retries mean the **same event can arrive multiple times**. Always treat handlers as idempotent.
+
+Every event carries a unique `eventId`. Store it on first receipt and reject duplicates:
+
+```typescript
+async function handleEvent(event) {
+  const seen = await db.webhookEvents.findUnique({
+    where: { eventId: event.id }
+  })
+  if (seen) return // already processed
+
+  await db.$transaction([
+    db.webhookEvents.create({ data: { eventId: event.id, type: event.type } }),
+    // ...your actual processing
+  ])
+}
+```
+
+## Event Ordering
+
+Cronozen does not guarantee delivery order. If event A is created before event B, your endpoint may receive B before A. Design handlers to be order-independent, or use the event's `createdAt` and your local state to reconcile.
+
+For workflows that strictly depend on order (e.g., "approve then disburse"), use the [Workflows API](/api-reference/workflows) instead — it enforces sequence within a single workflow instance.
+
+## Local Development
+
+For local testing, use a tunnel like `ngrok` or `cloudflared`:
+
+```bash
+ngrok http 3000
+# → https://abc123.ngrok.io
+```
+
+Register the ngrok URL as your webhook endpoint. Events arrive in your local environment with the same headers and signature as production.
+
+## Security Checklist
+
+- [ ] Verify signature on every request
+- [ ] Use `crypto.timingSafeEqual` (not string comparison) to prevent timing attacks
+- [ ] Return 2xx within 5 seconds
+- [ ] Store event IDs for idempotency
+- [ ] Rotate signing secret periodically (`POST /webhooks/{id}/rotate-secret`)
+- [ ] Restrict endpoint to inbound traffic only (no auth-required pages)
+- [ ] Log signature failures — repeated failures may indicate replay attacks
+
+## See Also
+
+- [Webhook API Reference](/api-reference/webhooks)
+- [Error Handling Guide](/guides/error-handling)
+- [Workflows API](/api-reference/workflows)

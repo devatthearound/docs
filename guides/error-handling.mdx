@@ -1,0 +1,146 @@
+---
+title: "Error Handling & Retries"
+description: "How Cronozen returns errors, when to retry, idempotency keys, and resilient client patterns"
+---
+
+# Error Handling & Retries
+
+A robust integration is built around two assumptions: **the network will fail, and the same request may execute more than once**. This guide shows how to handle Cronozen errors correctly without creating duplicate decisions, double-charged payments, or broken DPU chains.
+
+## Error Response Shape
+
+Every Cronozen error follows the same shape:
+
+```json
+{
+  "error": {
+    "code": "POLICY_VIOLATION",
+    "message": "Subsidy policy v2.3 disallows applicants under 18.",
+    "requestId": "req_a7f3d8e2",
+    "details": {
+      "policyId": "subsidy-policy-v2.3",
+      "ruleId": "minimum-age"
+    }
+  }
+}
+```
+
+Always log `requestId` — it lets us trace the exact request server-side when you contact support.
+
+## HTTP Status Codes
+
+| Status | Meaning | Should Retry? |
+|--------|---------|---------------|
+| `400` | Bad request (validation, schema) | No — fix the request |
+| `401` | Missing or invalid API key | No — refresh credentials |
+| `403` | Authenticated but unauthorized | No — check scope/role |
+| `404` | Resource not found | No |
+| `409` | Conflict (duplicate, version mismatch) | Sometimes — see below |
+| `422` | Policy violation, semantic error | No — domain decision |
+| `429` | Rate limited | **Yes**, with backoff (`Retry-After` header) |
+| `500` | Server error | **Yes**, with backoff |
+| `502/503/504` | Gateway/availability | **Yes**, with backoff |
+
+Rule of thumb: **only `429` and `5xx` are safe to retry**. Retrying `4xx` errors will just produce the same error.
+
+## Idempotency Keys
+
+For any state-changing call (creating decisions, payments, attendance), pass an `Idempotency-Key` header. If the same key arrives twice, Cronozen returns the original response without re-executing:
+
+```bash
+curl -X POST https://cronozen.com/api/v1/agents/decide \
+  -H "Authorization: Bearer $CRONOZEN_API_KEY" \
+  -H "Idempotency-Key: order-8x2k-decision-1" \
+  -d '{ ... }'
+```
+
+The key should be:
+- **Stable** — derived from your domain (e.g., `order-{orderId}-decision-{attempt}`)
+- **Unique** per logical action — not random per HTTP request
+- **Long enough** to avoid collisions (UUIDs work, short slugs don't)
+
+Without an idempotency key, a network retry can create two decisions for the same event.
+
+## Recommended Retry Logic
+
+Exponential backoff with jitter:
+
+```typescript
+async function withRetry<T>(
+  fn: () => Promise<T>,
+  opts = { maxAttempts: 5, baseDelayMs: 200 }
+): Promise<T> {
+  let lastErr: unknown
+  for (let attempt = 1; attempt <= opts.maxAttempts; attempt++) {
+    try {
+      return await fn()
+    } catch (err: any) {
+      lastErr = err
+      const status = err.response?.status
+      const retryable = status === 429 || (status >= 500 && status < 600)
+      if (!retryable || attempt === opts.maxAttempts) throw err
+
+      const retryAfter = err.response?.headers?.['retry-after']
+      const delay = retryAfter
+        ? parseInt(retryAfter, 10) * 1000
+        : opts.baseDelayMs * Math.pow(2, attempt - 1) + Math.random() * 100
+      await new Promise(r => setTimeout(r, delay))
+    }
+  }
+  throw lastErr
+}
+```
+
+## Handling 409 Conflict
+
+`409` indicates the request collided with existing state. Common cases:
+
+- **Duplicate idempotency key with different body** — fix your key derivation
+- **Optimistic version mismatch** — refresh the resource and retry with new version
+- **Workflow state conflict** — the workflow has moved past the step you're trying to act on
+
+`409` errors include enough detail to decide. They are **not** safe to retry blindly.
+
+## DPU Sealing Failures
+
+If a decision call succeeds but DPU sealing fails (rare — usually a transient storage error), the response includes `dpu.status: "pending"` instead of `"sealed"`. Two options:
+
+1. **Wait and check** — poll `GET /api/v1/dpu/{id}` until status is `sealed`.
+2. **Retry the decide call** with the same idempotency key — Cronozen will return the existing decision and attempt to re-seal the DPU.
+
+A decision without a sealed DPU is **not committed** — the operation can be safely retried.
+
+## Network Timeouts
+
+Set client timeouts above Cronozen's expected response time:
+
+| Endpoint | Typical | Timeout to set |
+|----------|---------|----------------|
+| Most CRUD | < 500 ms | 5 s |
+| `POST /agents/decide` (with model call) | 1–5 s | 30 s |
+| `POST /agents/decide` (with human approval) | wait-on-approval | Use webhooks |
+| Long-running workflows | > 30 s | Use workflow API + polling/webhook |
+
+If a request times out, treat it as **unknown outcome** — the operation may have succeeded server-side. Retry with the same idempotency key.
+
+## What Cronozen Does on Your Behalf
+
+- Internal services automatically retry transient downstream failures.
+- DPU chain integrity is preserved even across server restarts.
+- Webhook delivery is retried for 7 attempts before being marked failed (see [Webhook Integration](/guides/webhook-integration)).
+
+## Debugging Checklist
+
+When something goes wrong:
+
+1. Log the full error response, including `requestId`
+2. Check whether the status is 4xx (your side) or 5xx (our side)
+3. For 4xx: read `error.code` and `error.message` — these are designed to tell you what to fix
+4. For 5xx: retry with backoff; if persistent, contact support with `requestId`
+5. For ambiguous (timeout, network reset): retry with the same `Idempotency-Key`
+
+## See Also
+
+- [API Reference: Errors](/api-reference/errors)
+- [Webhook Integration](/guides/webhook-integration)
+- [Workflows API](/api-reference/workflows)

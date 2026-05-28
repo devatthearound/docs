@@ -1,0 +1,215 @@
+---
+title: "Webhooks API"
+description: "Register, list, rotate, retry, and manage webhook subscriptions for real-time Cronozen events"
+---
+
+# Webhooks API
+
+This reference covers the REST API for managing webhook subscriptions. For setup, security verification, and retry handling patterns, see the [Webhook Integration Guide](/guides/webhook-integration).
+
+## Base URL
+
+```
+https://cronozen.com/api/v1/webhooks
+```
+
+All endpoints require a Bearer API key in the `Authorization` header.
+
+## Event Types
+
+Subscribe to one or more event types when registering a webhook. Events are namespaced by domain.
+
+| Event | When It Fires |
+|-------|---------------|
+| `dpu.sealed` | A new Decision Proof Unit is sealed and committed to the chain |
+| `dpu.verified` | An external verification request was processed |
+| `agent.decision.completed` | An agent finished a decision (autonomous or after approval) |
+| `agent.approval.requested` | An agent is waiting on human approval |
+| `payment.completed` | A payment was confirmed and reconciled |
+| `payment.failed` | A payment attempt failed terminally |
+| `attendance.verified` | A QR check-in or workshop attendance was confirmed |
+| `certificate.issued` | A digital certificate (with DPU proof) was issued to a learner |
+| `workflow.transitioned` | A workflow instance moved between states |
+
+Wildcard `*` is supported (e.g., `payment.*`) but not recommended in production — explicit lists make consumer behavior clearer.
+
+## Endpoints
+
+### Register Webhook
+
+```http
+POST /api/v1/webhooks
+```
+
+**Body**
+
+```json
+{
+  "url": "https://your-app.example.com/webhooks/cronozen",
+  "events": ["dpu.sealed", "payment.completed"],
+  "description": "Production listener",
+  "active": true
+}
+```
+
+**Response 201**
+
+```json
+{
+  "id": "wh_a7f3d8",
+  "url": "https://your-app.example.com/webhooks/cronozen",
+  "events": ["dpu.sealed", "payment.completed"],
+  "active": true,
+  "signingSecret": "whsec_e3a9b2c1d4f5...",
+  "createdAt": "2026-05-28T03:14:00Z"
+}
+```
+
+<Warning>
+`signingSecret` is returned **only at registration**. Store it securely. If lost, use `POST /webhooks/{id}/rotate-secret` to generate a new one (and update your consumer).
+</Warning>
+
+### List Webhooks
+
+```http
+GET /api/v1/webhooks
+```
+
+**Response 200**
+
+```json
+{
+  "data": [
+    {
+      "id": "wh_a7f3d8",
+      "url": "https://your-app.example.com/webhooks/cronozen",
+      "events": ["dpu.sealed", "payment.completed"],
+      "active": true,
+      "lastDeliveryAt": "2026-05-28T03:13:55Z",
+      "lastDeliveryStatus": "success",
+      "createdAt": "2026-05-28T03:14:00Z"
+    }
+  ]
+}
+```
+
+### Update Webhook
+
+```http
+PATCH /api/v1/webhooks/{webhookId}
+```
+
+**Body** (any subset of fields)
+
+```json
+{
+  "events": ["dpu.sealed", "agent.approval.requested"],
+  "active": false
+}
+```
+
+### Delete Webhook
+
+```http
+DELETE /api/v1/webhooks/{webhookId}
+```
+
+### Rotate Signing Secret
+
+```http
+POST /api/v1/webhooks/{webhookId}/rotate-secret
+```
+
+**Response 200**
+
+```json
+{
+  "id": "wh_a7f3d8",
+  "signingSecret": "whsec_newkey..."
+}
+```
+
+After rotation, both the old and new secrets are valid for **24 hours** to allow zero-downtime rollover. Update your consumer to verify against the new secret, then the old secret is invalidated.
+
+### Retry a Failed Event
+
+```http
+POST /api/v1/webhooks/events/{eventId}/retry
+```
+
+Re-attempts delivery immediately. Returns the same retry semantics as the original delivery (exponential backoff for subsequent failures).
+
+### List Recent Deliveries
+
+```http
+GET /api/v1/webhooks/{webhookId}/deliveries?limit=50
+```
+
+**Response 200**
+
+```json
+{
+  "data": [
+    {
+      "eventId": "evt_8x2k",
+      "eventType": "dpu.sealed",
+      "deliveredAt": "2026-05-28T03:13:55Z",
+      "status": "success",
+      "responseStatus": 200,
+      "attempts": 1
+    },
+    {
+      "eventId": "evt_7y1j",
+      "eventType": "payment.completed",
+      "deliveredAt": "2026-05-28T02:50:12Z",
+      "status": "failed",
+      "responseStatus": 502,
+      "attempts": 7,
+      "nextRetryAt": null
+    }
+  ]
+}
+```
+
+## Event Payload Shape
+
+Every webhook POST to your endpoint follows this envelope:
+
+```json
+{
+  "id": "evt_8x2k",
+  "type": "dpu.sealed",
+  "createdAt": "2026-05-28T03:13:54Z",
+  "data": {
+    "dpuId": "dpu_a7f3d8e2",
+    "chainHash": "a7f3d8e2c1...b4f9",
+    "domain": "grant-review",
+    "actorId": "user_x9y2"
+  },
+  "deliveryAttempt": 1
+}
+```
+
+### Headers
+
+| Header | Description |
+|--------|-------------|
+| `X-Cronozen-Signature` | HMAC-SHA256 hex of the raw request body, signed with the webhook's `signingSecret` |
+| `X-Cronozen-Event-Id` | Same as `data.id` — use for idempotency |
+| `X-Cronozen-Delivery-Attempt` | `1` for first attempt, increments on retry |
+| `X-Cronozen-Timestamp` | Server-side dispatch time (ISO-8601 UTC) |
+| `Content-Type` | `application/json` |
+
+Always verify `X-Cronozen-Signature` before processing — see the [verification example](/guides/webhook-integration#2-verify-the-signature-on-every-request).
+
+## Rate Limits
+
+Webhook **outbound** delivery from Cronozen has no per-endpoint rate limit, but high-frequency endpoints may queue. If your endpoint cannot keep up with a burst, return `429 Retry-After` — Cronozen respects this header.
+
+Webhook **management API** calls follow standard API rate limits (see [API Overview](/api-reference/overview)).
+
+## See Also
+
+- [Webhook Integration Guide](/guides/webhook-integration)
+- [Error Handling](/guides/error-handling)
+- [API Reference: Overview](/api-reference/overview)

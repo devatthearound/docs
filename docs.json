@@ -59,7 +59,14 @@
         "group": "AI Agents",
         "pages": [
           "agents/overview",
-          "agents/workflow"
+          "agents/workflow",
+          "agents/decision-proof"
+        ]
+      },
+      {
+        "group": "Compliance",
+        "pages": [
+          "compliance/eu-ai-act"
         ]
       },
       {
@@ -67,7 +74,9 @@
         "pages": [
           "guides/white-label-setup",
           "guides/lms-integration",
-          "guides/data-model"
+          "guides/data-model",
+          "guides/webhook-integration",
+          "guides/error-handling"
         ]
       },
       {
@@ -87,6 +96,7 @@
           "api-reference/proof",
           "api-reference/tenants",
           "api-reference/workflows",
+          "api-reference/webhooks",
           "api-reference/errors"
         ]
       }

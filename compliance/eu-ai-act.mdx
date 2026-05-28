@@ -1,0 +1,140 @@
+---
+title: "EU AI Act Technical Compliance"
+description: "How Cronozen DPU maps to EU AI Act technical documentation, logging, and human oversight requirements"
+---
+
+# EU AI Act Technical Compliance
+
+The EU AI Act enters phased enforcement through 2025–2027, with the GPAI (general-purpose AI) provisions becoming binding from **August 2, 2026**. For high-risk AI systems, Articles 11–15 specify concrete technical requirements: technical documentation, record-keeping, transparency, human oversight, and accuracy/robustness.
+
+Cronozen's DPU was designed independently around the same audit demands. This page maps DPU primitives directly to AI Act Articles so compliance teams can see what is already covered and where additional configuration is needed.
+
+## Coverage Matrix
+
+| AI Act Article | Requirement | Cronozen Mechanism |
+|----------------|-------------|---------------------|
+| **Art. 11** — Technical Documentation | Maintain detailed system documentation including model purpose, data sources, training methodology | DPU bundles applied policy snapshot + model identity per decision |
+| **Art. 12** — Record-Keeping | Automatic logging of system operation, traceable to audit | DPU chain — hash-linked, tamper-evident, externally verifiable |
+| **Art. 13** — Transparency | Clear information to users about AI involvement and limitations | Decision response includes `aiInvolvement` and confidence score |
+| **Art. 14** — Human Oversight | Effective human intervention capability | Human-in-the-loop and human-on-the-loop modes captured in DPU |
+| **Art. 15** — Accuracy & Robustness | Performance monitoring, error rate tracking, robustness testing | Confidence scores, decision outcomes, and override patterns logged per DPU |
+
+## Article 12 — Record-Keeping in Detail
+
+Article 12 demands that high-risk AI systems automatically log enough information to "ensure the traceability of the system's functioning."
+
+The minimum recordable items include:
+
+- Period of each use
+- Input data reference
+- Persons involved in verification
+- Output produced
+
+DPU captures all of these as fields in the sealed envelope:
+
+```typescript
+type DPUEnvelope = {
+  dpuId: string
+  createdAt: string
+  // Art. 12: period of use
+  decisionStartedAt: string
+  decisionCompletedAt: string
+
+  // Art. 12: input data reference (Art. 11: data sources)
+  inputHash: string
+  inputSources: Array<{ kind: string; ref: string; hash: string }>
+
+  // Art. 11: applied policy / model identity
+  policyId: string
+  policyHash: string
+  modelId: string
+  modelVersion: string
+
+  // Art. 12 + Art. 14: human verification
+  approval: {
+    mode: 'autonomous' | 'human-on-loop' | 'human-in-loop'
+    approverId?: string
+    approvedAt?: string
+    overrideReason?: string
+  }
+
+  // Art. 12: output
+  output: { ... }
+  outputConfidence: number
+
+  // Hash chain (tamper evidence)
+  prevChainHash: string
+  chainHash: string
+}
+```
+
+## Article 14 — Human Oversight
+
+For high-risk AI, Article 14 requires that a human can:
+
+1. Fully understand the AI system's capabilities and limitations
+2. Remain aware of automation bias
+3. Correctly interpret outputs
+4. Decide not to use the output or override it
+5. Intervene or interrupt operation
+
+Cronozen's three decision modes map directly:
+
+<CardGroup cols={3}>
+  <Card title="Human-in-the-Loop" icon="user-check">
+    Required for Art. 14 high-risk decisions. Human approves before action; DPU records the human's decision and reasoning.
+  </Card>
+  <Card title="Human-on-the-Loop" icon="eye">
+    Acceptable for moderate-risk decisions with intervention window. DPU records both AI output and any human override.
+  </Card>
+  <Card title="Autonomous" icon="robot">
+    For low-risk, well-understood decisions only. DPU still captures full audit context for post-hoc review.
+  </Card>
+</CardGroup>
+
+Mode selection should be aligned with the system's risk classification under Art. 6 and the provider's risk management process (Art. 9).
+
+## GPAI (General-Purpose AI) — August 2, 2026
+
+If your system uses a GPAI model (e.g., Claude, GPT, Gemini) as a building block, you have additional obligations from August 2, 2026:
+
+- Track which GPAI model was used for each decision
+- Maintain references to the GPAI provider's technical documentation
+- Disclose AI-generated content under Art. 50
+
+Cronozen DPU already stores `modelId` and `modelVersion` per decision — enough to satisfy "which model was used" tracing. You are responsible for retaining the GPAI provider's technical documentation references.
+
+## Practical Compliance Workflow
+
+<CardGroup cols={2}>
+  <Card title="1. Classify your system" icon="layer-group">
+    Determine risk category under Art. 6. For high-risk, the full Art. 11–15 stack applies.
+  </Card>
+  <Card title="2. Configure decision modes" icon="sliders">
+    Set agent mode (in-loop / on-loop / autonomous) per use case to match Art. 14 requirements.
+  </Card>
+  <Card title="3. Define policy snapshots" icon="scroll">
+    Version your decision policies. DPU snapshots the active version at each decision.
+  </Card>
+  <Card title="4. Export audit trail" icon="file-export">
+    Use `GET /api/v1/dpu/export` to produce a verifiable bundle for technical documentation (Art. 11).
+  </Card>
+</CardGroup>
+
+## What Cronozen Does Not Cover
+
+DPU is a technical proof layer. It does not replace:
+
+- **Risk management process (Art. 9)** — a documented organizational process is still required
+- **Data quality (Art. 10)** — your training/operational data must meet quality requirements
+- **Conformity assessment (Art. 43)** — third-party assessment for certain high-risk systems
+- **Post-market monitoring (Art. 72)** — your operational reporting obligation
+
+Cronozen produces the **evidence** that supports these processes. The processes themselves remain your responsibility.
+
+## See Also
+
+- [DPU Engine](/architecture/dpu)
+- [Decision Proof for Agents](/agents/decision-proof)
+- [Proof Pipeline](/architecture/proof-pipeline)
+- [API Reference: Proof](/api-reference/proof)
