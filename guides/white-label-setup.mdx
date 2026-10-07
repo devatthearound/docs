@@ -291,8 +291,8 @@ if (request.headers.get('host') === 'old-brand.com') {
 The CloudFlare Worker rewrites canonical links:
 
 ```html
-<!-- Before (cronozen.com) -->
-<link rel="canonical" href="https://cronozen.com/brand-slug/pricing" />
+<!-- Before (platform domain, internal path) -->
+<link rel="canonical" href="https://platform.example/brand-slug/pricing" />
 
 <!-- After (brand.co.kr) -->
 <link rel="canonical" href="https://brand.co.kr/pricing" />
